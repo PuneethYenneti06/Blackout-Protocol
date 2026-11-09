@@ -136,6 +136,18 @@ PrefabInstance:
       value: Player
       objectReference: {fileID: 0}
     - target: {fileID: 400060, guid: fcb334eb247ae3e488abb081c847cf09, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 0.85
+      objectReference: {fileID: 0}
+    - target: {fileID: 400060, guid: fcb334eb247ae3e488abb081c847cf09, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 0.85
+      objectReference: {fileID: 0}
+    - target: {fileID: 400060, guid: fcb334eb247ae3e488abb081c847cf09, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0.85
+      objectReference: {fileID: 0}
+    - target: {fileID: 400060, guid: fcb334eb247ae3e488abb081c847cf09, type: 3}
       propertyPath: m_LocalPosition.x
       value: -227.9342
       objectReference: {fileID: 0}
@@ -486,6 +498,12 @@ MonoBehaviour:
   runSpeed: 5
   turnSpeed: 12
   gravity: -20
+  jumpHeight: 1.2
+--- !u!4 &1038190960 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 400060, guid: fcb334eb247ae3e488abb081c847cf09, type: 3}
+  m_PrefabInstance: {fileID: 270780516}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1727833085
 GameObject:
   m_ObjectHideFlags: 0
@@ -515,7 +533,7 @@ Transform:
   m_GameObject: {fileID: 1727833085}
   serializedVersion: 2
   m_LocalRotation: {x: 0.08715578, y: -0, z: -0, w: 0.9961947}
-  m_LocalPosition: {x: -227.9342, y: 2.1980002, z: 76.89}
+  m_LocalPosition: {x: -227.972, y: 2.33, z: 76.451}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -633,13 +651,21 @@ MonoBehaviour:
   m_GameObject: {fileID: 1727833085}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9bf167d6341cb774eba1d26159440a90, type: 3}
+  m_Script: {fileID: 11500000, guid: 6f5617e8732f45541822c5905f8d50ca, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::FollowPlayer
-  target: {fileID: 0}
-  offset: {x: 0, y: 2, z: -4}
-  smoothSpeed: 10
-  lookHeight: 1.5
+  m_EditorClassIdentifier: Assembly-CSharp::ThirdPersonCamera
+  target: {fileID: 1038190960}
+  distance: 4
+  height: 1.4
+  shoulderOffset: 0.5
+  sensitivity: 3
+  minPitch: -20
+  maxPitch: 60
+  smooth: 12
+  collisionRadius: 0.25
+  collisionMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
