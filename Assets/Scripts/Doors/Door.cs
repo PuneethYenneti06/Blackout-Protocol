@@ -4,16 +4,25 @@ using UnityEngine;
 // A door that swings open around its hinge edge.
 // Doors inside the floor model are found by name ("Door", "Door.001", ...) and set up
 // automatically when the scene starts, so nothing has to be added to the scene by hand.
+// Door sounds are loaded from Assets/Resources/Sounds/door_open and door_close, so every
+// door (including ones added at runtime) plays them without any Inspector setup.
 public class Door : MonoBehaviour
 {
     public float openAngle = 90f;
     public float swingSpeed = 180f; // degrees per second
+
+    [Range(0f, 1f)] public float soundVolume = 1f;
 
     public bool IsOpen { get; private set; }
 
     Transform hinge;
     float currentAngle;
     float targetAngle;
+    AudioSource audioSource;
+
+    static AudioClip openClip;
+    static AudioClip closeClip;
+    static bool soundsLoaded;
 
     static readonly Regex DoorName = new Regex(@"^Door(\.\d+)?$");
     static readonly Regex HandleName = new Regex(@"^Handle(\.\d+)?$");
@@ -33,6 +42,15 @@ public class Door : MonoBehaviour
 
     void Start()
     {
+        LoadSounds();
+
+        audioSource = GetComponent<AudioSource>();
+        if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
+        audioSource.playOnAwake = false;
+        audioSource.spatialBlend = 1f; // the sound comes from the door's position
+        audioSource.minDistance = 2f;
+        audioSource.maxDistance = 25f;
+
         Mesh mesh = GetComponent<MeshFilter>().sharedMesh;
         Bounds b = mesh.bounds; // local space
 
@@ -79,6 +97,19 @@ public class Door : MonoBehaviour
         transform.SetParent(hinge, true);
     }
 
+    static void LoadSounds()
+    {
+        if (soundsLoaded) return;
+        soundsLoaded = true;
+
+        openClip = Resources.Load<AudioClip>("Sounds/door_open");
+        closeClip = Resources.Load<AudioClip>("Sounds/door_close");
+
+        if (closeClip == null) closeClip = openClip; // one sound is enough for both
+        if (openClip == null)
+            Debug.LogWarning("[Door] No door_open clip found. Put it in Assets/Resources/Sounds/door_open.");
+    }
+
     Transform FindNearbyHandle(float doorWidth)
     {
         Vector3 center = GetComponent<Renderer>().bounds.center;
@@ -97,10 +128,15 @@ public class Door : MonoBehaviour
     public void Toggle(Vector3 userPosition)
     {
         if (hinge == null) return;
+
+        // Doors are loud: guards nearby hear them
+        GuardAlert.MakeNoise(transform.position, 15f);
+
         if (IsOpen)
         {
             targetAngle = 0f;
             IsOpen = false;
+            PlaySound(closeClip);
             return;
         }
 
@@ -112,6 +148,13 @@ public class Door : MonoBehaviour
         Vector3 swungPlus = Quaternion.AngleAxis(openAngle, Vector3.up) * closedOffset;
         targetAngle = Vector3.Dot(swungPlus, toUser) < 0f ? openAngle : -openAngle;
         IsOpen = true;
+        PlaySound(openClip);
+    }
+
+    void PlaySound(AudioClip clip)
+    {
+        if (clip != null && audioSource != null)
+            audioSource.PlayOneShot(clip, soundVolume);
     }
 
     void Update()

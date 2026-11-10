@@ -1,7 +1,7 @@
 using UnityEngine;
 
 // Lets the player open and close doors with E.
-// Added to the object tagged "Player" automatically when a scene loads.
+// Only objects with a Door component (added by hand to each door panel) can be used.
 public class DoorInteractor : MonoBehaviour
 {
     public KeyCode key = KeyCode.E;
@@ -36,7 +36,8 @@ public class DoorInteractor : MonoBehaviour
         {
             Door door = c.GetComponentInParent<Door>();
             if (door == null) continue;
-            float d = Vector3.Distance(eye, c.ClosestPoint(eye));
+            // Bounds.ClosestPoint works on every collider type, including mesh colliders
+            float d = Vector3.Distance(eye, c.bounds.ClosestPoint(eye));
             if (d < closestDist) { closestDist = d; closest = door; }
         }
         return closest;
