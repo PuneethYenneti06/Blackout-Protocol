@@ -7,6 +7,7 @@ using UnityEngine.SceneManagement;
 public sealed class BlackoutDirector : MonoBehaviour
 {
     private const float DefaultBatterySeconds = 120f;
+    private const int AudioSampleRate = 44100;
     private static BlackoutDirector instance;
 
     [Header("Controls")]
@@ -18,20 +19,34 @@ public sealed class BlackoutDirector : MonoBehaviour
     [SerializeField] private float flashlightAngle = 42f;
     [SerializeField] private float flashlightIntensity = 4.5f;
     [SerializeField] private float batterySeconds = DefaultBatterySeconds;
+    [SerializeField] private float transitionDuration = 0.35f;
 
     [Header("Blackout grading")]
     [SerializeField] private float blackoutExposure = -1.2f;
     [SerializeField] private Color blackoutColorFilter = new Color(0.55f, 0.68f, 0.82f);
+    [SerializeField] private float blackoutContrast = 18f;
+    [SerializeField] private float blackoutSaturation = -25f;
+    [SerializeField] private Color blackoutAmbientColor = new Color(0.015f, 0.025f, 0.05f);
 
     private readonly List<Light> managedLights = new List<Light>();
     private readonly Dictionary<Light, bool> originalLightStates = new Dictionary<Light, bool>();
+    private readonly Dictionary<Light, float> originalLightIntensities = new Dictionary<Light, float>();
     private Light flashlight;
     private Volume volume;
     private ColorAdjustments colorAdjustments;
+    private AudioSource blackoutAudio;
+    private AudioClip humClip;
+    private AudioClip switchClip;
     private float normalExposure;
+    private float normalContrast;
+    private float normalSaturation;
     private Color normalColorFilter = Color.white;
+    private Color normalAmbientColor;
     private bool isBlackout;
     private bool flashlightEnabled = true;
+    private float transition;
+    private float transitionTarget;
+    private bool sceneStateCaptured;
 
     public bool IsBlackout => isBlackout;
     public float BatteryPercent => Mathf.Clamp01(batterySeconds / DefaultBatterySeconds);
@@ -72,9 +87,15 @@ public sealed class BlackoutDirector : MonoBehaviour
 
         if (Input.GetKeyDown(flashlightKey))
         {
-            flashlightEnabled = !flashlightEnabled;
-            UpdateFlashlight();
+            if (isBlackout)
+            {
+                flashlightEnabled = !flashlightEnabled;
+                UpdateFlashlight();
+            }
         }
+
+        transition = Mathf.MoveTowards(transition, transitionTarget, Time.deltaTime / Mathf.Max(0.01f, transitionDuration));
+        ApplyTransition(transition);
 
         if (flashlight != null && flashlight.enabled)
         {
@@ -90,20 +111,27 @@ public sealed class BlackoutDirector : MonoBehaviour
     private void EnsureSceneReferences()
     {
         managedLights.Clear();
-        originalLightStates.Clear();
         foreach (Light sceneLight in FindObjectsByType<Light>(FindObjectsSortMode.None))
         {
-            if (sceneLight == null || sceneLight.type == LightType.Rectangle)
+            if (sceneLight == null || sceneLight == flashlight || sceneLight.type == LightType.Rectangle)
             {
                 continue;
             }
 
             managedLights.Add(sceneLight);
-            originalLightStates[sceneLight] = sceneLight.enabled;
+            if (!originalLightStates.ContainsKey(sceneLight))
+            {
+                originalLightStates[sceneLight] = sceneLight.enabled;
+                originalLightIntensities[sceneLight] = sceneLight.intensity;
+            }
         }
 
         CreateFlashlight();
         FindOrCreateColorAdjustments();
+        CreateBlackoutAudio();
+        transition = isBlackout ? 1f : 0f;
+        transitionTarget = transition;
+        ApplyTransition(transition);
     }
 
     private void CreateFlashlight()
@@ -138,6 +166,56 @@ public sealed class BlackoutDirector : MonoBehaviour
         UpdateFlashlight();
     }
 
+    private void CreateBlackoutAudio()
+    {
+        if (blackoutAudio != null)
+        {
+            return;
+        }
+
+        GameObject audioObject = new GameObject("Blackout Soundscape");
+        audioObject.transform.SetParent(transform, false);
+        blackoutAudio = audioObject.AddComponent<AudioSource>();
+        blackoutAudio.loop = true;
+        blackoutAudio.playOnAwake = false;
+        blackoutAudio.spatialBlend = 0f;
+        blackoutAudio.volume = 0.16f;
+        humClip = CreateHumClip();
+        switchClip = CreateSwitchClip();
+        blackoutAudio.clip = humClip;
+    }
+
+    private AudioClip CreateHumClip()
+    {
+        const int seconds = 2;
+        AudioClip clip = AudioClip.Create("Blackout Hum", AudioSampleRate * seconds, 1, AudioSampleRate, false);
+        float[] samples = new float[AudioSampleRate * seconds];
+        for (int i = 0; i < samples.Length; i++)
+        {
+            float time = i / (float)AudioSampleRate;
+            samples[i] = Mathf.Sin(time * Mathf.PI * 2f * 52f) * 0.22f
+                + Mathf.Sin(time * Mathf.PI * 2f * 104f) * 0.06f;
+        }
+
+        clip.SetData(samples, 0);
+        return clip;
+    }
+
+    private AudioClip CreateSwitchClip()
+    {
+        const int sampleCount = AudioSampleRate / 8;
+        AudioClip clip = AudioClip.Create("Blackout Switch", sampleCount, 1, AudioSampleRate, false);
+        float[] samples = new float[sampleCount];
+        for (int i = 0; i < samples.Length; i++)
+        {
+            float envelope = 1f - i / (float)samples.Length;
+            samples[i] = Mathf.Sin(i * 0.42f) * envelope * 0.35f;
+        }
+
+        clip.SetData(samples, 0);
+        return clip;
+    }
+
     private void FindOrCreateColorAdjustments()
     {
         volume = FindFirstObjectByType<Volume>();
@@ -160,41 +238,74 @@ public sealed class BlackoutDirector : MonoBehaviour
             colorAdjustments = volume.profile.Add<ColorAdjustments>(true);
         }
 
-        normalExposure = colorAdjustments.postExposure.value;
-        normalColorFilter = colorAdjustments.colorFilter.value;
+        if (!sceneStateCaptured)
+        {
+            normalExposure = colorAdjustments.postExposure.value;
+            normalContrast = colorAdjustments.contrast.value;
+            normalSaturation = colorAdjustments.saturation.value;
+            normalColorFilter = colorAdjustments.colorFilter.value;
+            normalAmbientColor = RenderSettings.ambientLight;
+            sceneStateCaptured = true;
+        }
     }
 
     private void SetBlackout(bool enabled)
     {
         EnsureSceneReferences();
         isBlackout = enabled;
+        transitionTarget = enabled ? 1f : 0f;
+        if (blackoutAudio != null)
+        {
+            blackoutAudio.PlayOneShot(switchClip);
+            if (enabled)
+            {
+                blackoutAudio.Play();
+            }
+            else
+            {
+                blackoutAudio.Stop();
+            }
+        }
+        UpdateFlashlight();
+    }
 
+    private void ApplyTransition(float amount)
+    {
         foreach (Light sceneLight in managedLights)
         {
-            if (sceneLight == null || sceneLight == flashlight)
+            if (sceneLight == null)
             {
                 continue;
             }
 
-            if (enabled)
+            if (originalLightIntensities.TryGetValue(sceneLight, out float originalIntensity))
             {
-                sceneLight.enabled = false;
+                sceneLight.intensity = Mathf.Lerp(originalIntensity, 0f, amount);
             }
-            else if (originalLightStates.TryGetValue(sceneLight, out bool originalState))
+
+            if (amount <= 0f && originalLightStates.TryGetValue(sceneLight, out bool originalState))
             {
                 sceneLight.enabled = originalState;
+            }
+            else if (amount > 0f)
+            {
+                sceneLight.enabled = true;
             }
         }
 
         if (colorAdjustments != null)
         {
-            colorAdjustments.postExposure.overrideState = enabled;
-            colorAdjustments.postExposure.value = enabled ? blackoutExposure : normalExposure;
-            colorAdjustments.colorFilter.overrideState = enabled;
-            colorAdjustments.colorFilter.value = enabled ? blackoutColorFilter : normalColorFilter;
+            colorAdjustments.postExposure.overrideState = true;
+            colorAdjustments.postExposure.value = Mathf.Lerp(normalExposure, blackoutExposure, amount);
+            colorAdjustments.contrast.overrideState = true;
+            colorAdjustments.contrast.value = Mathf.Lerp(normalContrast, blackoutContrast, amount);
+            colorAdjustments.saturation.overrideState = true;
+            colorAdjustments.saturation.value = Mathf.Lerp(normalSaturation, blackoutSaturation, amount);
+            colorAdjustments.colorFilter.overrideState = true;
+            colorAdjustments.colorFilter.value = Color.Lerp(normalColorFilter, blackoutColorFilter, amount);
         }
 
-        UpdateFlashlight();
+        RenderSettings.ambientLight = Color.Lerp(normalAmbientColor, blackoutAmbientColor, amount);
     }
 
     private void UpdateFlashlight()
@@ -218,7 +329,9 @@ public sealed class BlackoutDirector : MonoBehaviour
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
-        isBlackout = false;
+        sceneStateCaptured = false;
+        originalLightStates.Clear();
+        originalLightIntensities.Clear();
         EnsureSceneReferences();
     }
 }

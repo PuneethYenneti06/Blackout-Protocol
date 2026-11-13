@@ -5,7 +5,8 @@
 - Press **B** to trigger a scene-wide blackout and restore the original light state.
 - Press **F** during a blackout to toggle the procedural flashlight.
 - The flashlight has a two-minute battery and uses soft shadows for a stronger sense of depth.
-- URP color grading shifts to a cool, low-exposure look during a blackout and restores the scene grade afterward.
+- Lighting, ambient colour, and URP colour grading transition smoothly to a cool, low-exposure look during a blackout.
+- A low electrical hum and switch click reinforce the blackout state without requiring a scene-specific audio setup.
 
 The runtime system is created automatically after each scene loads, so existing scenes do not need a manager prefab.
 
