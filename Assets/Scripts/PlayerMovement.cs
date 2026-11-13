@@ -24,8 +24,6 @@ public class PlayerMovement : MonoBehaviour
     int currentState;
 
     Vector3 moveDir;      // wanted horizontal direction, set in Update
-    Vector3 aimDir;       // camera forward (flattened), set in Update
-    bool aiming;          // shoot button held, set in Update
     float moveSpeed;
     bool jumpQueued;
     bool grounded;
@@ -82,8 +80,6 @@ public class PlayerMovement : MonoBehaviour
 
         moveDir = moving ? dir.normalized : Vector3.zero;
         moveSpeed = running ? runSpeed : walkSpeed;
-        aimDir = camF;
-        aiming = Input.GetMouseButton(0);
         if (grounded && Input.GetKeyDown(KeyCode.Space)) jumpQueued = true;
 
         if (animator != null && animator.runtimeAnimatorController != null)
@@ -160,12 +156,7 @@ public class PlayerMovement : MonoBehaviour
         grounded = CheckGrounded();
         bool moving = moveDir != Vector3.zero;
 
-        if (aiming && aimDir.sqrMagnitude > 0.001f)
-        {
-            // aiming: face where the camera looks
-            rb.MoveRotation(Quaternion.Slerp(rb.rotation, Quaternion.LookRotation(aimDir), turnSpeed * Time.fixedDeltaTime));
-        }
-        else if (moving)
+        if (moving)
         {
             Quaternion target = Quaternion.LookRotation(moveDir);
             rb.MoveRotation(Quaternion.Slerp(rb.rotation, target, turnSpeed * Time.fixedDeltaTime));
