@@ -32,7 +32,7 @@ public class lightonoff : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        if (other.gameObject.tag == "Player")     //if player in zone
+        if (other.CompareTag("Player"))     //if player in zone
         {
             //txtToDisplay.SetActive(true);
             PlayerInZone = true;
@@ -42,7 +42,7 @@ public class lightonoff : MonoBehaviour
 
     private void OnTriggerExit(Collider other)     //if player exit zone
     {
-        if (other.gameObject.tag == "Player")
+        if (other.CompareTag("Player"))
         {
             PlayerInZone = false;
             //txtToDisplay.SetActive(false);
