@@ -21,7 +21,7 @@ public class lightonoff : MonoBehaviour
 
     private void Update()
     {
-        if (PlayerInZone && Input.GetKeyDown(KeyCode.F))           //if in zone and press F key
+        if (PlayerInZone && Input.GetKeyDown(KeyCode.E))           //if in zone and press E key (F is the flashlight)
         {
             lightorobj.SetActive(!lightorobj.activeSelf);
             fan.SetActive(!fan.activeSelf);

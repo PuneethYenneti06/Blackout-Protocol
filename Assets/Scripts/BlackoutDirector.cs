@@ -51,6 +51,19 @@ public sealed class BlackoutDirector : MonoBehaviour
     public bool IsBlackout => isBlackout;
     public float BatteryPercent => Mathf.Clamp01(batterySeconds / DefaultBatterySeconds);
 
+    // The one director in the game (created automatically after the scene loads).
+    public static BlackoutDirector Instance => instance;
+
+    // Fired whenever the power goes off (true) or comes back (false).
+    public static event System.Action<bool> BlackoutChanged;
+
+    // Called by the UPS power switch (PowerSwitch) to cut or restore the building's power.
+    public static void SetPower(bool on)
+    {
+        if (instance == null) CreateForScene();
+        if (instance != null && instance.isBlackout == on) instance.SetBlackout(!on);
+    }
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateForScene()
     {
@@ -80,10 +93,13 @@ public sealed class BlackoutDirector : MonoBehaviour
 
     private void Update()
     {
+#if UNITY_EDITOR
+        // Debug shortcut, editor only. In the game the UPS power switch cuts the power.
         if (Input.GetKeyDown(blackoutKey))
         {
             SetBlackout(!isBlackout);
         }
+#endif
 
         if (Input.GetKeyDown(flashlightKey))
         {
@@ -91,6 +107,7 @@ public sealed class BlackoutDirector : MonoBehaviour
             {
                 flashlightEnabled = !flashlightEnabled;
                 UpdateFlashlight();
+                PlayToggleClick();
             }
         }
 
@@ -132,6 +149,7 @@ public sealed class BlackoutDirector : MonoBehaviour
         transition = isBlackout ? 1f : 0f;
         transitionTarget = transition;
         ApplyTransition(transition);
+        SyncGuardAlert();
     }
 
     private void CreateFlashlight()
@@ -267,6 +285,22 @@ public sealed class BlackoutDirector : MonoBehaviour
             }
         }
         UpdateFlashlight();
+        BlackoutChanged?.Invoke(enabled);
+    }
+
+    private void PlayToggleClick()
+    {
+        if (blackoutAudio != null && switchClip != null)
+        {
+            blackoutAudio.PlayOneShot(switchClip, 0.5f);
+        }
+    }
+
+    // Keeps the guards' vision rules in step with the lights and the flashlight.
+    private void SyncGuardAlert()
+    {
+        GuardAlert.Blackout = isBlackout;
+        GuardAlert.FlashlightOn = flashlight != null && flashlight.enabled;
     }
 
     private void ApplyTransition(float amount)
@@ -310,12 +344,12 @@ public sealed class BlackoutDirector : MonoBehaviour
 
     private void UpdateFlashlight()
     {
-        if (flashlight == null)
+        if (flashlight != null)
         {
-            return;
+            flashlight.enabled = flashlightEnabled && batterySeconds > 0f && isBlackout;
         }
 
-        flashlight.enabled = flashlightEnabled && batterySeconds > 0f && isBlackout;
+        SyncGuardAlert();
     }
 
     private void OnDestroy()
@@ -329,6 +363,15 @@ public sealed class BlackoutDirector : MonoBehaviour
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        // A new or restarted mission always starts with the power on and a full battery.
+        isBlackout = false;
+        flashlightEnabled = true;
+        batterySeconds = DefaultBatterySeconds;
+        if (blackoutAudio != null)
+        {
+            blackoutAudio.Stop();
+        }
+
         sceneStateCaptured = false;
         originalLightStates.Clear();
         originalLightIntensities.Clear();

@@ -1,5 +1,12 @@
 fileFormatVersion: 2
 guid: fcb334eb247ae3e488abb081c847cf09
+AssetOrigin:
+  serializedVersion: 1
+  productId: 73611
+  packageName: Low Poly Soldiers Demo
+  packageVersion: 1.0
+  assetPath: Assets/LowPolySoldiers_demo/models/Soldier_demo.FBX
+  uploadId: 982312
 ModelImporter:
   serializedVersion: 24501
   internalIDToNameTable:
@@ -313,7 +320,7 @@ ModelImporter:
     skeletonHasParents: 0
   lastHumanDescriptionAvatarSource: {instanceID: 0}
   autoGenerateAvatarMappingIfUnspecified: 1
-  animationType: 2
+  animationType: 3
   humanoidOversampling: 1
   avatarSetup: 1
   addHumanoidExtraRootOnlyWhenUsingAvatar: 0
@@ -323,10 +330,3 @@ ModelImporter:
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 73611
-  packageName: Low Poly Soldiers Demo
-  packageVersion: 1.0
-  assetPath: Assets/LowPolySoldiers_demo/models/Soldier_demo.FBX
-  uploadId: 982312

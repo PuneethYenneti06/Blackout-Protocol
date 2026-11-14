@@ -15,6 +15,9 @@ public class PlayerMovement : MonoBehaviour
     public float jumpHeight = 1.2f;
     public LayerMask groundMask = ~0;
 
+    // Scales walk/run speed. Medkit healing sets it below 1 (slowed); 1 = normal.
+    [HideInInspector] public float speedMultiplier = 1f;
+
     Rigidbody rb;
     CapsuleCollider capsule;
     Animator animator;
@@ -24,6 +27,8 @@ public class PlayerMovement : MonoBehaviour
     int currentState;
 
     Vector3 moveDir;      // wanted horizontal direction, set in Update
+    Vector3 aimDir;       // camera forward (flattened), set in Update
+    bool aiming;          // shoot button held, set in Update
     float moveSpeed;
     bool jumpQueued;
     bool grounded;
@@ -79,7 +84,9 @@ public class PlayerMovement : MonoBehaviour
         bool running = Input.GetKey(KeyCode.LeftShift);
 
         moveDir = moving ? dir.normalized : Vector3.zero;
-        moveSpeed = running ? runSpeed : walkSpeed;
+        moveSpeed = (running ? runSpeed : walkSpeed) * speedMultiplier;
+        aimDir = camF;
+        aiming = Input.GetMouseButton(0);
         if (grounded && Input.GetKeyDown(KeyCode.Space)) jumpQueued = true;
 
         if (animator != null && animator.runtimeAnimatorController != null)
@@ -88,7 +95,15 @@ public class PlayerMovement : MonoBehaviour
             animator.SetFloat("Speed", animSpeed, 0.1f, Time.deltaTime);
 
             int wanted = !moving ? IdleHash : (running ? RunHash : WalkHash);
-            if (wanted != currentState)
+
+            // One-shot full-body clips (Hit, Kneel) exit back to Idle on their own, which used to
+            // leave him stuck in the idle animation while running. So instead of only reacting to
+            // input changes, compare with the state the animator is really in: whenever the base
+            // layer is in a locomotion state that isn't the wanted one, fade to the wanted one.
+            AnimatorStateInfo info = animator.GetCurrentAnimatorStateInfo(0);
+            int current = info.shortNameHash;
+            bool inLocomotion = current == IdleHash || current == WalkHash || current == RunHash;
+            if (inLocomotion && current != wanted && !animator.IsInTransition(0))
             {
                 animator.CrossFadeInFixedTime(wanted, 0.1f);
                 currentState = wanted;
@@ -127,6 +142,10 @@ public class PlayerMovement : MonoBehaviour
             Collider c = overlapHits[i];
             if (c == capsule || c.transform.IsChildOf(transform)) continue;
             if (c.GetComponentInParent<Door>() != null) continue; // doors swing through him
+            // Other characters (guards, hostages) and movable props are not walls: physics
+            // keeps him out of them, so touching one must not knock him back
+            if (c.attachedRigidbody != null) continue;
+            if (c.GetComponentInParent<UnityEngine.AI.NavMeshAgent>() != null) continue;
             return true;
         }
         return false;
@@ -156,7 +175,12 @@ public class PlayerMovement : MonoBehaviour
         grounded = CheckGrounded();
         bool moving = moveDir != Vector3.zero;
 
-        if (moving)
+        if (aiming && aimDir.sqrMagnitude > 0.001f)
+        {
+            // aiming: face where the camera looks
+            rb.MoveRotation(Quaternion.Slerp(rb.rotation, Quaternion.LookRotation(aimDir), turnSpeed * Time.fixedDeltaTime));
+        }
+        else if (moving)
         {
             Quaternion target = Quaternion.LookRotation(moveDir);
             rb.MoveRotation(Quaternion.Slerp(rb.rotation, target, turnSpeed * Time.fixedDeltaTime));

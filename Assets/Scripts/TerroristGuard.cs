@@ -1,4 +1,7 @@
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
+using UnityEngine.UI;
 
 // Shared rules for guards and the player.
 public static class GuardAlert
@@ -44,7 +47,16 @@ public static class GuardAlert
 // The rifle needs two empty markers as children of the Ak47, named "Stock" (back of the
 // stock, against the shoulder) and "Foregrip" (the front grip, where the left hand holds).
 // Everything is measured from his own position, and the player is found by its tag.
-public class TerroristGuard : MonoBehaviour
+//
+// Mission AI: each guard has a role. Before the lockdown, Static and Bomb guards hold
+// their posts and Patrol guards walk their PatrolRoute. A guard who keeps the player in sight
+// for radioTime seconds radios an alarm (world-space RADIO bar). In LOCKDOWN, Hostage guards
+// go to the hostage room and hold it; everyone else hunts the player's last known position.
+// Movement uses a NavMeshAgent (added automatically when the guard stands on a baked NavMesh);
+// without a NavMesh guards simply stay at their posts as before.
+public enum GuardRole { Static, Patrol, Bomb, Hostage }
+
+public class TerroristGuard : MonoBehaviour, IDamageable
 {
     enum State { Scanning, Alerted, Searching, Dead }
 
@@ -87,11 +99,41 @@ public class TerroristGuard : MonoBehaviour
     public float accuracySpread = 0.1f;
     public float maxShotDistance = 100f;
 
+    [Header("Mission role")]
+    public GuardRole role = GuardRole.Static;
+    public PatrolRoute patrolRoute;                  // Patrol role: waypoints to loop through
+    public float patrolWaitTime = 2f;                // seconds at each waypoint
+    public float walkSpeed = 1.6f;
+    public float runSpeed = 4f;
+    public float moveTurnSpeed = 360f;               // body turn speed while walking/running
+    public float bombGuardDistance = 2.5f;           // Bomb role: post this far from the bomb
+    public float hostageHoldRadius = 2f;             // Hostage role: spread around the hostage room centre
+    public float huntWanderRadius = 8f;              // after reaching the last known position, search around it
+    public bool shootFreedHostages = true;           // in lockdown, shoot hostages that follow the player
+
+    [Header("Radio alarm")]
+    public bool canRadio = true;
+    public float radioTime = 3f;                     // seconds of continuous sight before the alarm
+    public float radioBarHeight = 0.5f;              // metres above his eyes
+    public AudioClip radioSound;                     // optional, plays when the alarm goes out
+
+    [Header("Drop on death")]
+    public GameObject magazineDropPrefab;            // optional; a placeholder box is used if empty
+    public int magazineAmmo = 30;
+
     // Fired when any guard dies, so the mission logic can count them.
     public static event System.Action<TerroristGuard> GuardKilled;
 
+    // Fired when a guard spots the player (each time he goes from not-alerted to alerted by sight).
+    public static event System.Action<TerroristGuard> PlayerSpotted;
+
     State state = State.Scanning;
     int health;
+    float flinch;          // 1 right after a hit, fades: the body rocks back
+    Transform modelRoot;   // the skeleton's root node under this object (not a bone), tilted for the flinch
+    Quaternion modelRootBase;
+
+    public bool IsDead => state == State.Dead;
 
     // Bones
     bool hasArms;
@@ -162,6 +204,16 @@ public class TerroristGuard : MonoBehaviour
             indexProximal = animator.GetBoneTransform(HumanBodyBones.RightIndexProximal);
             indexIntermediate = animator.GetBoneTransform(HumanBodyBones.RightIndexIntermediate);
             indexDistal = animator.GetBoneTransform(HumanBodyBones.RightIndexDistal);
+
+            // The node between this object and the hips (the FBX root), if there is one
+            Transform hips = animator.GetBoneTransform(HumanBodyBones.Hips);
+            Transform node = hips;
+            while (node != null && node.parent != transform) node = node.parent;
+            if (node != null && node != hips && node != transform)
+            {
+                modelRoot = node;
+                modelRootBase = node.localRotation;
+            }
         }
 
         hasArms = leftUpper != null && leftLower != null && leftHand != null
@@ -204,6 +256,17 @@ public class TerroristGuard : MonoBehaviour
             audioSource.spatialBlend = 1f; // sound comes from where he is
         }
 
+        npcAnimator = GetComponent<NpcAnimator>();
+        if (npcAnimator == null) npcAnimator = gameObject.AddComponent<NpcAnimator>();
+
+        EnsureHitbox();
+
+        postPosition = transform.position;
+        SetupNavigation();
+        if (role == GuardRole.Bomb) TakeBombPost();
+        if (npcAnimator.agent == null) npcAnimator.agent = agent;
+        BuildRadioBar();
+
         // Start each guard looking at a different side, and at a different point in his pause
         sweepTarget = Random.value < 0.5f ? scanAngle : -scanAngle;
         pauseTimer = Random.Range(0f, pauseAtEnds);
@@ -232,60 +295,93 @@ public class TerroristGuard : MonoBehaviour
 
         UpdateSweep(dt);
 
-        bool sees = CanSeePlayer(keepTracking: state == State.Alerted);
+        MissionManager mission = MissionManager.Instance;
+        bool lockdown = mission != null && mission.IsLockdown;
+        bool over = mission != null && mission.IsOver;
+
+        bool sees = !over && CanSeePlayer(keepTracking: state == State.Alerted);
 
         if (sees)
         {
+            hostageTarget = null;
             if (state != State.Alerted)
             {
                 state = State.Alerted;
                 alertTimer = 0f; // start the reaction delay
+                PlayerSpotted?.Invoke(this);
             }
 
             alertTimer += dt;
             lastKnownPosition = PlayerAim();
+            if (mission != null) mission.ReportPlayerPosition(player.transform.position);
 
             if (alertTimer >= reactionDelay && Time.time >= nextShotTime)
             {
                 nextShotTime = Time.time + fireInterval;
-                Fire();
+                Fire(PlayerAim());
             }
         }
-        else if (state == State.Alerted)
+        else
         {
-            // Lost sight of you: lower the rifle and go look where you were last seen
-            state = State.Searching;
-            searchTimer = searchTime;
-            scanCenterYaw = YawToward(lastKnownPosition);
-        }
-        else if (state == State.Searching)
-        {
-            searchTimer -= dt;
-            if (searchTimer <= 0f)
+            if (state == State.Alerted)
             {
-                state = State.Scanning;
-                scanCenterYaw = postYaw;
+                // Lost sight of you: lower the rifle and go look where you were last seen
+                state = State.Searching;
+                searchTimer = searchTime;
+                scanCenterYaw = YawToward(lastKnownPosition);
+                if (lockdown && role != GuardRole.Hostage) SetHunt(lastKnownPosition);
             }
+            else if (state == State.Searching)
+            {
+                searchTimer -= dt;
+                if (searchTimer <= 0f)
+                {
+                    state = State.Scanning;
+                    scanCenterYaw = postYaw;
+                }
+            }
+
+            // In lockdown, freed hostages he can see are targets too
+            hostageTarget = (lockdown && !over && shootFreedHostages) ? FindVisibleHostage() : null;
+            if (hostageTarget != null)
+            {
+                hostageAlertTimer += dt;
+                if (hostageAlertTimer >= reactionDelay && Time.time >= nextShotTime)
+                {
+                    nextShotTime = Time.time + fireInterval;
+                    Fire(HostageAim(hostageTarget));
+                }
+            }
+            else hostageAlertTimer = 0f;
         }
+
+        UpdateRadio(dt, sees, mission);
 
         bool alerted = state == State.Alerted;
+        bool engaging = alerted || hostageTarget != null;
 
-        // Rifle: rises while alerted, lowers otherwise
-        float aimTarget = (holdRifle && alerted) ? 1f : 0f;
+        UpdateMovement(dt, lockdown && !over, engaging || over);
+        KeepFeetOnFloor(dt);
+
+        // Rifle: rises while engaging, lowers otherwise
+        float aimTarget = (holdRifle && engaging) ? 1f : 0f;
         aimWeight = Mathf.MoveTowards(aimWeight, aimTarget, dt / Mathf.Max(raiseTime, 0.01f));
         recoilKick = Mathf.MoveTowards(recoilKick, 0f, dt * 8f);
+        flinch = Mathf.MoveTowards(flinch, 0f, dt * 3f);
 
-        // Body: holds the post, turns to a sound, or turns to face you when alerted
+        // Body: holds the post / follows his path, turns to a sound, or faces his target
         float bodyTarget;
         if (alerted) bodyTarget = YawToward(lastKnownPosition);
+        else if (hostageTarget != null) bodyTarget = YawToward(hostageTarget.transform.position);
         else bodyTarget = scanCenterYaw + (head != null ? 0f : sweepOffset);
 
-        currentYaw = Mathf.MoveTowardsAngle(currentYaw, bodyTarget, turnSpeed * dt);
+        float turn = isMoving ? Mathf.Max(turnSpeed, moveTurnSpeed) : turnSpeed;
+        currentYaw = Mathf.MoveTowardsAngle(currentYaw, bodyTarget, turn * dt);
         transform.rotation = Quaternion.Euler(0f, currentYaw, 0f);
 
-        // Head: looks left and right while scanning, straight ahead when alerted
+        // Head: looks left and right while scanning, straight ahead when engaging
         float headTarget = 0f;
-        if (!alerted && head != null)
+        if (!engaging && head != null)
             headTarget = Mathf.Clamp(sweepOffset, -maxHeadYaw, maxHeadYaw);
         headYaw = Mathf.MoveTowardsAngle(headYaw, headTarget, headTurnSpeed * dt);
     }
@@ -293,9 +389,16 @@ public class TerroristGuard : MonoBehaviour
     // Runs after the animator. Every frame starts from the rest pose, so nothing builds up over time.
     void LateUpdate()
     {
+        UpdateRadioBarTransform();
         if (state == State.Dead) return;
 
         ResetPose();
+
+        // Hit reaction: the whole body rocks back from the feet, then straightens up again.
+        // (Set outright each frame on the model's root node, which no animation touches,
+        // so it can't build up.)
+        if (modelRoot != null)
+            modelRoot.localRotation = modelRootBase * Quaternion.Euler(-15f * flinch, 0f, 0f);
 
         if (head != null)
             head.rotation = Quaternion.AngleAxis(headYaw, Vector3.up) * head.rotation;
@@ -337,7 +440,8 @@ public class TerroristGuard : MonoBehaviour
             : transform.position + Vector3.up * 1.2f * s;
 
         Vector3 aimDir = transform.forward;
-        if (player != null) aimDir = (PlayerAim() - chestPos).normalized;
+        if (hostageTarget != null && state != State.Alerted) aimDir = (HostageAim(hostageTarget) - chestPos).normalized;
+        else if (player != null) aimDir = (PlayerAim() - chestPos).normalized;
 
         float kick = recoilKick;
 
@@ -465,6 +569,12 @@ public class TerroristGuard : MonoBehaviour
         }
     }
 
+    // IDamageable: every bullet that hits him counts as one hit, whatever its damage value.
+    public void TakeDamage(float amount)
+    {
+        TakeHit();
+    }
+
     // Called by the player's gun (or anything else) when it hits this guard.
     public void TakeHit()
     {
@@ -477,6 +587,7 @@ public class TerroristGuard : MonoBehaviour
             return;
         }
 
+        flinch = 1f;
         if (state != State.Alerted)
         {
             if (player != null) lastKnownPosition = PlayerAim();
@@ -488,8 +599,105 @@ public class TerroristGuard : MonoBehaviour
     void Die()
     {
         state = State.Dead;
+        Pickup.Spawn(magazineDropPrefab, PickupType.Ammo, magazineAmmo,
+                     transform.position + transform.forward * 0.5f + Vector3.up * 0.05f, "rounds");
         GuardKilled?.Invoke(this);
-        gameObject.SetActive(false);
+
+        radioTimer = 0f;
+        if (radioBar != null) radioBar.SetActive(false);
+        if (tracer != null) tracer.enabled = false;
+        if (agent != null && agent.enabled) agent.enabled = false;
+
+        // Shots pass through the body from now on
+        foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = false;
+
+        // With a death clip he falls and stays; without one the body is tipped over by code
+        if (npcAnimator == null || !npcAnimator.PlayDeath())
+            StartCoroutine(FallOver());
+    }
+
+    // Fallback death without an animation clip: the whole body tips over backwards and lies there.
+    System.Collections.IEnumerator FallOver()
+    {
+        Quaternion start = transform.rotation;
+        Quaternion end = Quaternion.AngleAxis(-88f, transform.right) * start;
+        Vector3 pivot = transform.position;
+        float t = 0f;
+        while (t < 1f)
+        {
+            t += Time.deltaTime / 0.6f;
+            float k = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t));
+            transform.rotation = Quaternion.Slerp(start, end, k);
+            // Keep the hips roughly on the floor as he goes over
+            transform.position = pivot + Vector3.up * 0.1f * transform.lossyScale.y * k;
+            yield return null;
+        }
+    }
+
+    // Guards' models ship without colliders, so the player's shots would pass straight through
+    // them. Add a body-sized capsule (plus a kinematic Rigidbody so physics treats him as a
+    // moving object) if the model has none.
+    void EnsureHitbox()
+    {
+        if (GetComponentInChildren<Collider>() != null) return;
+
+        float s = Mathf.Max(transform.lossyScale.y, 0.0001f);
+        float height = eyeHeight * 1.12f;    // fallback: a bit above the eyes
+        Bounds b = default;
+        bool any = false;
+        foreach (Renderer r in GetComponentsInChildren<Renderer>())
+        {
+            if (r is ParticleSystemRenderer || r is LineRenderer) continue;
+            if (!any) { b = r.bounds; any = true; } else b.Encapsulate(r.bounds);
+        }
+        if (any && b.size.y > 0.5f * s) height = b.size.y / s;
+
+        CapsuleCollider capsule = gameObject.AddComponent<CapsuleCollider>();
+        capsule.direction = 1;
+        capsule.height = height;
+        capsule.radius = Mathf.Min(0.32f, height * 0.25f);
+        capsule.center = new Vector3(0f, height * 0.5f, 0f);
+
+        Rigidbody body = GetComponent<Rigidbody>();
+        if (body == null) body = gameObject.AddComponent<Rigidbody>();
+        body.isKinematic = true;
+        body.useGravity = false;
+        body.interpolation = RigidbodyInterpolation.None;
+    }
+
+    // The NavMesh is built from render meshes and can sit below a floor's collider, which lets a
+    // moving guard sink into the floor. Each frame, look for a floor surface above his feet (and
+    // below his hips) and lift him onto it. Only ever lifts: raycasts ignore back faces, and some
+    // of the level's mesh colliders have flipped faces, so a "floor" found below the feet may be
+    // the inside of a block he is correctly standing on.
+    void KeepFeetOnFloor(float dt)
+    {
+        float s = transform.lossyScale.y;
+        Vector3 origin = transform.position + Vector3.up * (1.0f * s);
+        int count = Physics.RaycastNonAlloc(origin, Vector3.down, hitBuffer, 1.0f * s + 1.5f, ~0,
+                                            QueryTriggerInteraction.Ignore);
+        float floorY = 0f;
+        float best = float.MaxValue;
+        bool found = false;
+        for (int i = 0; i < count; i++)
+        {
+            RaycastHit h = hitBuffer[i];
+            if (h.collider.transform.IsChildOf(transform)) continue;
+            if (h.collider.attachedRigidbody != null) continue;                        // player, other guards, props
+            if (h.collider.GetComponentInParent<NavMeshAgent>() != null) continue;    // hostages
+            if (h.normal.y < 0.5f) continue;                                           // walls
+            if (h.distance < best) { best = h.distance; floorY = h.point.y; found = true; }
+        }
+        if (!found) return;
+
+        float offset = floorY - transform.position.y;   // > 0: his feet are below the floor
+        if (offset < 0.01f) return;
+        float step = Mathf.Min(offset, 2f * dt);
+
+        if (navReady && agent != null && agent.enabled)
+            agent.baseOffset = Mathf.Min(agent.baseOffset + step, 0.75f);
+        else
+            transform.position += Vector3.up * step;
     }
 
     void OnNoise(Vector3 position, float radius)
@@ -503,6 +711,9 @@ public class TerroristGuard : MonoBehaviour
         scanCenterYaw = Quaternion.LookRotation(offset).eulerAngles.y;
         state = State.Searching;
         searchTimer = searchTime;
+
+        MissionManager m = MissionManager.Instance;
+        if (m != null && m.IsLockdown && role != GuardRole.Hostage) SetHunt(position);
     }
 
     // ---- Seeing the player ----
@@ -553,12 +764,11 @@ public class TerroristGuard : MonoBehaviour
 
     // ---- Shooting ----
 
-    void Fire()
+    void Fire(Vector3 aim)
     {
-        if (player == null) return;
+        if (player == null && hostageTarget == null) return;
 
         Vector3 origin = MuzzlePosition();
-        Vector3 aim = PlayerAim();
 
         // Hitscan: aim at a point near the player. Usually close to the body,
         // sometimes far off, which makes it a miss. The first thing the ray hits decides the result.
@@ -570,10 +780,27 @@ public class TerroristGuard : MonoBehaviour
         if (FirstHit(origin, dir, maxShotDistance, out RaycastHit hit))
         {
             end = hit.point;
-            if (IsPlayer(hit.collider)) HitPlayer();
+            bool flesh = false;
+            if (IsPlayer(hit.collider))
+            {
+                HitPlayer();
+                flesh = true;
+            }
+            else
+            {
+                // Only hostages who are following the player can be shot; captives are his leverage
+                Hostage h = hit.collider.GetComponentInParent<Hostage>();
+                if (h != null)
+                {
+                    flesh = true;
+                    if (h.State == Hostage.HostageState.Following) h.Kill();
+                }
+            }
+            ShotEffects.Impact(hit.point, hit.normal, flesh);
         }
 
         ShowTracer(origin, end);
+        ShotEffects.MuzzleFlash(origin, dir);
 
         recoilKick = 1f;
         if (audioSource != null && fireSound != null)
@@ -640,6 +867,378 @@ public class TerroristGuard : MonoBehaviour
         tracer.SetPosition(1, to);
         tracer.enabled = true;
         tracerTimer = 0.06f;
+    }
+
+    // ---- Mission AI: movement ----
+
+    NavMeshAgent agent;
+    NpcAnimator npcAnimator;
+    bool navReady;
+    bool isMoving;
+    Vector3 postPosition;
+    bool awayFromPost;
+    int patrolIndex;
+    float patrolWait;
+    Vector3 huntPoint;
+    bool hasHunt;
+    bool huntArrived;
+    float huntSearchTimer;
+    Vector3 lastMissionReport = new Vector3(float.MaxValue, 0f, 0f);
+    Vector3 holdPoint;
+    bool holdPointSet;
+    Hostage hostageTarget;
+    float hostageAlertTimer;
+
+    const float ArriveDistance = 0.6f;
+
+    void SetupNavigation()
+    {
+        agent = GetComponent<NavMeshAgent>();
+        bool onMesh = NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 2f, NavMesh.AllAreas);
+        if (agent == null)
+        {
+            if (!onMesh)
+            {
+                Debug.LogWarning($"[TerroristGuard] {name}: no NavMesh under him (bake one). He will stay at his post.");
+                return;
+            }
+            agent = gameObject.AddComponent<NavMeshAgent>();
+        }
+
+        agent.updateRotation = false;   // the body yaw is turned by this script
+        agent.speed = walkSpeed;
+        agent.acceleration = 10f;
+        agent.stoppingDistance = 0.2f;
+        agent.autoBraking = true;
+        agent.radius = 0.35f;
+
+        if (agent.enabled && !agent.isOnNavMesh && onMesh) agent.Warp(hit.position);
+        navReady = agent.enabled && agent.isOnNavMesh;
+        if (!navReady) agent.enabled = false;
+    }
+
+    // Bomb guards stand around wherever the bomb spawned this run, facing outward
+    void TakeBombPost()
+    {
+        Bomb bomb = Bomb.Instance != null ? Bomb.Instance : FindFirstObjectByType<Bomb>();
+        if (bomb == null) return;
+
+        int index = RoleIndex(GuardRole.Bomb);
+        Vector3 offset = Quaternion.Euler(0f, 45f + index * 180f, 0f) * Vector3.forward * bombGuardDistance;
+        Vector3 p = bomb.transform.position + offset;
+        if (NavMesh.SamplePosition(p, out NavMeshHit hit, 2f, NavMesh.AllAreas)) p = hit.position;
+
+        if (navReady) agent.Warp(p);
+        else transform.position = p;
+
+        postPosition = p;
+        postYaw = Quaternion.LookRotation(offset).eulerAngles.y;
+        scanCenterYaw = postYaw;
+        currentYaw = postYaw;
+        transform.rotation = Quaternion.Euler(0f, postYaw, 0f);
+    }
+
+    // This guard's place among the guards with the same role (stable within a run)
+    int RoleIndex(GuardRole r)
+    {
+        List<TerroristGuard> same = new List<TerroristGuard>();
+        foreach (TerroristGuard g in FindObjectsByType<TerroristGuard>(FindObjectsSortMode.None))
+            if (g.role == r) same.Add(g);
+        same.Sort((a, b) =>
+        {
+            int byName = string.CompareOrdinal(a.name, b.name);
+            if (byName != 0) return byName;
+            int byX = a.transform.position.x.CompareTo(b.transform.position.x);
+            return byX != 0 ? byX : a.transform.position.z.CompareTo(b.transform.position.z);
+        });
+        return Mathf.Max(0, same.IndexOf(this));
+    }
+
+    void SetHunt(Vector3 point)
+    {
+        huntPoint = point;
+        hasHunt = true;
+        huntArrived = false;
+    }
+
+    void UpdateMovement(float dt, bool lockdown, bool holdStill)
+    {
+        isMoving = false;
+        if (!navReady || agent == null || !agent.enabled || !agent.isOnNavMesh) return;
+
+        if (holdStill)
+        {
+            StopMoving();
+            return;
+        }
+
+        if (lockdown)
+        {
+            if (role == GuardRole.Hostage)
+            {
+                if (!holdPointSet) holdPointSet = PickHoldPoint();
+                if (!Near(holdPoint)) Go(holdPoint, true);
+                else StopMoving();
+                return;
+            }
+
+            // Everyone else hunts the newest last-known position (from any guard or the alarm)
+            MissionManager m = MissionManager.Instance;
+            if (m != null && m.HasLastKnownPlayerPosition && FlatDistance(m.LastKnownPlayerPosition, lastMissionReport) > 1f)
+            {
+                lastMissionReport = m.LastKnownPlayerPosition;
+                SetHunt(lastMissionReport);
+            }
+
+            if (!hasHunt)
+            {
+                StopMoving();
+                return;
+            }
+
+            if (!huntArrived)
+            {
+                Go(huntPoint, true);
+                if (Near(huntPoint))
+                {
+                    huntArrived = true;
+                    huntSearchTimer = searchTime;
+                }
+            }
+            else
+            {
+                StopMoving();
+                huntSearchTimer -= dt;
+                if (huntSearchTimer <= 0f)
+                {
+                    // Nothing here: search somewhere nearby
+                    Vector3 random = huntPoint + Random.insideUnitSphere * huntWanderRadius;
+                    if (NavMesh.SamplePosition(random, out NavMeshHit hit, huntWanderRadius, NavMesh.AllAreas))
+                        huntPoint = hit.position;
+                    huntArrived = false;
+                }
+            }
+            return;
+        }
+
+        // Before the lockdown: a noise makes him stop and look
+        if (state == State.Searching)
+        {
+            StopMoving();
+            return;
+        }
+
+        if (role == GuardRole.Patrol && patrolRoute != null && patrolRoute.Count > 0)
+        {
+            Vector3 wp = patrolRoute.GetPoint(patrolIndex);
+            if (Near(wp))
+            {
+                StopMoving();
+                patrolWait += dt;
+                if (patrolWait >= patrolWaitTime)
+                {
+                    patrolWait = 0f;
+                    patrolIndex = (patrolIndex + 1) % patrolRoute.Count;
+                }
+            }
+            else Go(wp, false);
+            return;
+        }
+
+        if (!Near(postPosition))
+        {
+            Go(postPosition, false);
+            awayFromPost = true;
+        }
+        else
+        {
+            StopMoving();
+            if (awayFromPost)
+            {
+                awayFromPost = false;
+                scanCenterYaw = postYaw;
+            }
+        }
+    }
+
+    bool PickHoldPoint()
+    {
+        if (!Hostage.TryGetRoomCenter(out Vector3 center))
+        {
+            holdPoint = postPosition;
+            return true;
+        }
+        int index = RoleIndex(GuardRole.Hostage);
+        Vector3 p = center + Quaternion.Euler(0f, index * 180f, 0f) * Vector3.forward * hostageHoldRadius;
+        if (NavMesh.SamplePosition(p, out NavMeshHit hit, 3f, NavMesh.AllAreas)) p = hit.position;
+        holdPoint = p;
+        return true;
+    }
+
+    void Go(Vector3 point, bool run)
+    {
+        agent.isStopped = false;
+        agent.speed = run ? runSpeed : walkSpeed;
+        if ((!agent.hasPath && !agent.pathPending) || FlatDistance(agent.destination, point) > 0.5f)
+            agent.SetDestination(point);
+
+        Vector3 v = agent.velocity;
+        v.y = 0f;
+        isMoving = v.sqrMagnitude > 0.04f;
+        if (isMoving) scanCenterYaw = Quaternion.LookRotation(v).eulerAngles.y;
+    }
+
+    void StopMoving()
+    {
+        if (agent.hasPath) agent.ResetPath();
+        agent.isStopped = true;
+    }
+
+    bool Near(Vector3 point)
+    {
+        return FlatDistance(transform.position, point) <= ArriveDistance;
+    }
+
+    static float FlatDistance(Vector3 a, Vector3 b)
+    {
+        a.y = 0f;
+        b.y = 0f;
+        return Vector3.Distance(a, b);
+    }
+
+    // ---- Mission AI: hostages as targets ----
+
+    Hostage FindVisibleHostage()
+    {
+        Vector3 eye = EyePosition();
+        Hostage best = null;
+        float bestDist = CurrentRange();
+        foreach (Hostage h in Hostage.All)
+        {
+            if (h == null || h.State != Hostage.HostageState.Following) continue;
+            Vector3 to = HostageAim(h) - eye;
+            float d = to.magnitude;
+            if (d > bestDist || d < 0.01f) continue;
+            if (h != hostageTarget && Vector3.Angle(GazeDirection(), to) > fieldOfView * 0.5f) continue;
+            if (!FirstHit(eye, to / d, d + 0.5f, out RaycastHit hit)) continue;
+            if (hit.collider.GetComponentInParent<Hostage>() != h) continue;
+            best = h;
+            bestDist = d;
+        }
+        return best;
+    }
+
+    static Vector3 HostageAim(Hostage h)
+    {
+        return h.transform.position + Vector3.up * (1.0f * h.transform.lossyScale.y);
+    }
+
+    // ---- Mission AI: radio alarm ----
+
+    float radioTimer;
+    GameObject radioBar;
+    Image radioFill;
+    static Sprite radioSprite;
+
+    void UpdateRadio(float dt, bool seesPlayer, MissionManager m)
+    {
+        bool active = canRadio && m != null && m.State == MissionState.Infiltration;
+        if (active && seesPlayer)
+        {
+            radioTimer += dt;
+            if (radioTimer >= radioTime)
+            {
+                radioTimer = 0f;
+                if (radioSound != null)
+                {
+                    if (audioSource == null)
+                    {
+                        audioSource = gameObject.AddComponent<AudioSource>();
+                        audioSource.playOnAwake = false;
+                        audioSource.spatialBlend = 1f;
+                    }
+                    audioSource.PlayOneShot(radioSound);
+                }
+                m.RaiseAlarm($"{name} radioed an alarm");
+            }
+        }
+        else radioTimer = 0f;
+
+        if (radioBar != null)
+        {
+            bool show = radioTimer > 0f;
+            if (radioBar.activeSelf != show) radioBar.SetActive(show);
+            if (show) radioFill.fillAmount = radioTimer / Mathf.Max(radioTime, 0.01f);
+        }
+    }
+
+    void BuildRadioBar()
+    {
+        if (!canRadio) return;
+        if (radioSprite == null)
+            radioSprite = Sprite.Create(Texture2D.whiteTexture, new Rect(0f, 0f, 4f, 4f), new Vector2(0.5f, 0.5f));
+
+        radioBar = new GameObject("RadioBar", typeof(RectTransform));
+        radioBar.transform.SetParent(transform, false);
+        Canvas c = radioBar.AddComponent<Canvas>();
+        c.renderMode = RenderMode.WorldSpace;
+        c.sortingOrder = 50;
+        RectTransform rt = (RectTransform)radioBar.transform;
+        rt.sizeDelta = new Vector2(120f, 40f);
+
+        GameObject label = new GameObject("Label", typeof(RectTransform));
+        label.transform.SetParent(rt, false);
+        Text t = label.AddComponent<Text>();
+        t.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        t.text = "RADIO";
+        t.fontSize = 20;
+        t.fontStyle = FontStyle.Bold;
+        t.alignment = TextAnchor.MiddleCenter;
+        t.color = new Color(1f, 0.25f, 0.2f);
+        RectTransform lr = (RectTransform)label.transform;
+        lr.anchorMin = new Vector2(0f, 0.5f);
+        lr.anchorMax = new Vector2(1f, 1f);
+        lr.offsetMin = Vector2.zero;
+        lr.offsetMax = Vector2.zero;
+
+        GameObject back = new GameObject("Back", typeof(RectTransform));
+        back.transform.SetParent(rt, false);
+        Image bi = back.AddComponent<Image>();
+        bi.color = new Color(0f, 0f, 0f, 0.7f);
+        RectTransform br = (RectTransform)back.transform;
+        br.anchorMin = new Vector2(0f, 0.1f);
+        br.anchorMax = new Vector2(1f, 0.45f);
+        br.offsetMin = Vector2.zero;
+        br.offsetMax = Vector2.zero;
+
+        GameObject fill = new GameObject("Fill", typeof(RectTransform));
+        fill.transform.SetParent(back.transform, false);
+        radioFill = fill.AddComponent<Image>();
+        radioFill.sprite = radioSprite;
+        radioFill.type = Image.Type.Filled;
+        radioFill.fillMethod = Image.FillMethod.Horizontal;
+        radioFill.fillAmount = 0f;
+        radioFill.color = new Color(1f, 0.3f, 0.2f);
+        RectTransform fr = (RectTransform)fill.transform;
+        fr.anchorMin = Vector2.zero;
+        fr.anchorMax = Vector2.one;
+        fr.offsetMin = new Vector2(2f, 2f);
+        fr.offsetMax = new Vector2(-2f, -2f);
+
+        radioBar.SetActive(false);
+    }
+
+    // Keeps the bar above his head (1.2 m wide in the world), facing the camera
+    void UpdateRadioBarTransform()
+    {
+        if (radioBar == null || !radioBar.activeSelf) return;
+        Transform bt = radioBar.transform;
+        bt.position = EyePosition() + Vector3.up * radioBarHeight;
+        Vector3 ls = transform.lossyScale;
+        const float k = 0.01f;
+        bt.localScale = new Vector3(k / Mathf.Max(ls.x, 0.0001f), k / Mathf.Max(ls.y, 0.0001f), k / Mathf.Max(ls.z, 0.0001f));
+        UnityEngine.Camera cam = UnityEngine.Camera.main;
+        if (cam != null) bt.rotation = Quaternion.LookRotation(bt.position - cam.transform.position, Vector3.up);
     }
 
     // ---- Helpers ----

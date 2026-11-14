@@ -16,6 +16,16 @@ public class ThirdPersonCamera : MonoBehaviour
     float yaw;
     float pitch = 15f;
 
+    // Recoil: the gun kicks the view up a little on each shot, and it settles back
+    public float recoilRecovery = 8f;
+    float recoilPitch, recoilYaw;
+
+    public void AddRecoil(float pitchDegrees, float yawDegrees)
+    {
+        recoilPitch += pitchDegrees;
+        recoilYaw += yawDegrees;
+    }
+
     void Start()
     {
         if (target != null) yaw = target.eulerAngles.y;
@@ -42,7 +52,11 @@ public class ThirdPersonCamera : MonoBehaviour
         pitch -= Input.GetAxis("Mouse Y") * sensitivity;
         pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
 
-        Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
+        float settle = 1f - Mathf.Exp(-recoilRecovery * Time.deltaTime);
+        recoilPitch = Mathf.Lerp(recoilPitch, 0f, settle);
+        recoilYaw = Mathf.Lerp(recoilYaw, 0f, settle);
+
+        Quaternion rot = Quaternion.Euler(pitch - recoilPitch, yaw + recoilYaw, 0f);
         Vector3 pivot = target.position + Vector3.up * height;
         Vector3 desired = pivot + rot * new Vector3(shoulderOffset, 0f, -distance);
 

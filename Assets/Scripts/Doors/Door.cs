@@ -6,7 +6,7 @@ using UnityEngine;
 // automatically when the scene starts, so nothing has to be added to the scene by hand.
 // Door sounds are loaded from Assets/Resources/Sounds/door_open and door_close, so every
 // door (including ones added at runtime) plays them without any Inspector setup.
-public class Door : MonoBehaviour
+public class Door : MonoBehaviour, IInteractable
 {
     public float openAngle = 90f;
     public float swingSpeed = 180f; // degrees per second
@@ -123,6 +123,14 @@ public class Door : MonoBehaviour
         }
         return closest;
     }
+
+    // ---- IInteractable (E, used through Interactor) ----
+    public bool CanInteract(Interactor who) { return hinge != null; }
+    public string Prompt => IsOpen ? "close door" : "open door";
+    public float HoldTime => 0f;
+    public void Interact(Interactor who) { Toggle(who.transform.position); }
+    public void HoldTick(Interactor who, float progress) { }
+    public void HoldCancelled(Interactor who) { }
 
     // Open away from whoever is using the door, or close it again
     public void Toggle(Vector3 userPosition)
