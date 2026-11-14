@@ -49,7 +49,9 @@ public class MissionHUD : MonoBehaviour
     void Awake()
     {
         Instance = this;
-        font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        // HUD font: Oswald Bold (Assets/Resources/Fonts, OFL licence); the built-in font if it is missing
+        font = Resources.Load<Font>("Fonts/Oswald-Bold");
+        if (font == null) font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         Build();
     }
 
@@ -129,7 +131,8 @@ public class MissionHUD : MonoBehaviour
             damageFlash.color = c;
         }
 
-        if (m != null && m.IsOver && !endShown) ShowEndScreen(m);
+        // The bomb blast plays first; the end screen comes after it
+        if (m != null && m.IsOver && !endShown && !BombBlast.Playing) ShowEndScreen(m);
     }
 
     void FindPlayer(float dt)
@@ -180,11 +183,12 @@ public class MissionHUD : MonoBehaviour
 
         bool hostagesDone = m.HostagesSaved >= m.hostagesRequired;
         string text =
+            "<size=24><color=#E0372B>OBJECTIVES</color></size>\n" +
             Line(m.BombDefused, "Defuse the bomb") + "\n" +
             Line(hostagesDone, $"Extract hostages {m.HostagesSaved}/{m.hostagesRequired}" +
                                (m.HostagesFollowing > 0 ? $"  ({m.HostagesFollowing} following)" : "") +
                                (m.HostagesDead > 0 ? $"  <color=#FF5544>{m.HostagesDead} dead</color>" : "")) + "\n" +
-            "<size=22><color=#BBBBBB>" + Line(m.TerroristsKilled >= m.totalTerrorists,
+            "<size=26><color=#BBBBBB>" + Line(m.TerroristsKilled >= m.totalTerrorists,
                 $"Optional: neutralize terrorists {m.TerroristsKilled}/{m.totalTerrorists}") + "</color></size>";
         objectivesText.text = text;
     }
@@ -274,6 +278,8 @@ public class MissionHUD : MonoBehaviour
     void ShowEndScreen(MissionManager m)
     {
         endShown = true;
+        // The menu system draws its own end screen (statistics and buttons) when it is running
+        if (GameMenu.DrawsEndScreen) return;
         endRoot.SetActive(true);
         bool won = m.State == MissionState.Won;
         endTitle.text = won ? "MISSION COMPLETE" : "MISSION FAILED";
@@ -320,8 +326,12 @@ public class MissionHUD : MonoBehaviour
         lockdownText.gameObject.SetActive(false);
 
         // Objectives
-        objectivesText = MakeText(root, "Objectives", "", 26, TextAnchor.UpperLeft, Color.white);
-        Place(objectivesText.rectTransform, new Vector2(0f, 1f), new Vector2(30f, -24f), new Vector2(760f, 160f), new Vector2(0f, 1f));
+        Image objectivesBack = MakeImage(root, "ObjectivesBack", new Color(0f, 0f, 0f, 0.45f));
+        Place(objectivesBack.rectTransform, new Vector2(0f, 1f), new Vector2(18f, -14f), new Vector2(620f, 200f), new Vector2(0f, 1f));
+        objectivesBack.raycastTarget = false;
+        objectivesText = MakeText(root, "Objectives", "", 32, TextAnchor.UpperLeft, Color.white);
+        objectivesText.lineSpacing = 1.1f;
+        Place(objectivesText.rectTransform, new Vector2(0f, 1f), new Vector2(36f, -22f), new Vector2(760f, 190f), new Vector2(0f, 1f));
         AddShadow(objectivesText);
 
         // Health pips
