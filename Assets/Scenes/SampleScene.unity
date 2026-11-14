@@ -5008,15 +5008,15 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 5388256885799098436, guid: 1ef95b4f3a700bf4f9ab8f5ac251fc3f, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -199.5
+      value: -200.16
       objectReference: {fileID: 0}
     - target: {fileID: 5388256885799098436, guid: 1ef95b4f3a700bf4f9ab8f5ac251fc3f, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0
+      value: -0.167
       objectReference: {fileID: 0}
     - target: {fileID: 5388256885799098436, guid: 1ef95b4f3a700bf4f9ab8f5ac251fc3f, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 83
+      value: 92.52
       objectReference: {fileID: 0}
     - target: {fileID: 5388256885799098436, guid: 1ef95b4f3a700bf4f9ab8f5ac251fc3f, type: 3}
       propertyPath: m_LocalRotation.w
@@ -5045,6 +5045,26 @@ PrefabInstance:
     - target: {fileID: 5388256885799098436, guid: 1ef95b4f3a700bf4f9ab8f5ac251fc3f, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5538242929643461998, guid: 1ef95b4f3a700bf4f9ab8f5ac251fc3f, type: 3}
+      propertyPath: m_Center.z
+      value: 1.11
+      objectReference: {fileID: 0}
+    - target: {fileID: 5538242929643461998, guid: 1ef95b4f3a700bf4f9ab8f5ac251fc3f, type: 3}
+      propertyPath: m_IsTrigger
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5538242929643461998, guid: 1ef95b4f3a700bf4f9ab8f5ac251fc3f, type: 3}
+      propertyPath: m_ProvidesContacts
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5669612750446430773, guid: 1ef95b4f3a700bf4f9ab8f5ac251fc3f, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0.081
+      objectReference: {fileID: 0}
+    - target: {fileID: 5669612750446430773, guid: 1ef95b4f3a700bf4f9ab8f5ac251fc3f, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 1.074
       objectReference: {fileID: 0}
     - target: {fileID: 8330390934373878532, guid: 1ef95b4f3a700bf4f9ab8f5ac251fc3f, type: 3}
       propertyPath: m_Name

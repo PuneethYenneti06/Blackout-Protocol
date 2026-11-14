@@ -44,6 +44,7 @@ public class PlayerShooting : MonoBehaviour
     public int Magazine { get; private set; }
     public int Spare { get; private set; }
     public bool IsReloading { get; private set; }
+    public int ShotsFired { get; private set; }    // for the end-of-mission statistics
     public float ReloadProgress => IsReloading ? 1f - reloadTimer / Mathf.Max(reloadTime, 0.01f) : 0f;
 
     // (hit point, what was hit, killed). Fired when a shot hits something that can take damage.
@@ -198,6 +199,7 @@ public class PlayerShooting : MonoBehaviour
         if (cam == null) return;
 
         Magazine--;
+        ShotsFired++;
         AnimatorParams.TrySetTrigger(anim, "Shoot");
         PlaySound(fireSound);
         GuardAlert.MakeNoise(transform.position, gunshotNoiseRadius);

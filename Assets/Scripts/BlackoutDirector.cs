@@ -125,6 +125,17 @@ public sealed class BlackoutDirector : MonoBehaviour
         }
     }
 
+    // Re-reads every light's normal brightness and the ambient light, after other code changed them
+    // at startup (MapLighting adds ceiling lights and dims the sun).
+    public void RefreshLights()
+    {
+        if (isBlackout) return;
+        originalLightStates.Clear();
+        originalLightIntensities.Clear();
+        sceneStateCaptured = false;
+        EnsureSceneReferences();
+    }
+
     private void EnsureSceneReferences()
     {
         managedLights.Clear();
