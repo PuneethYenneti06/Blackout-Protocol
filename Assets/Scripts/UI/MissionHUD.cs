@@ -286,8 +286,8 @@ public class MissionHUD : MonoBehaviour
             $"Hostages saved: {m.HostagesSaved}/{m.totalHostages}\n" +
             $"Terrorists neutralized: {m.TerroristsKilled}/{m.totalTerrorists}\n" +
             $"Detected: {(m.PlayerWasDetected ? "yes" : "no")}\n\n" +
-            $"<color=#FFD23F>Press [{m.restartKey}] to restart</color>\n\n" +
-            $"<size=20><color=#999999>{credit}</color></size>";
+            $"<color=#FFD23F>Press [{m.restartKey}] to restart</color>";
+        // The bomb model's credit (CC BY) is kept in Assets/CREDITS.md instead of on this screen
     }
 
     // ---- Building the UI ----

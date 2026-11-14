@@ -14,7 +14,11 @@ public class Bomb : MonoBehaviour, IInteractable
     public float noiseInterval = 1f;
 
     [Header("Spawn")]
-    public bool randomSpawn = true;          // move to a random BombSpawnPoint at start
+    public bool randomSpawn = true;          // move to a random BombSpawnPoint at start (ignored when a code is needed:
+                                             // then it sits in the main area, see BossFight)
+
+    [Header("Disarm code")]
+    public bool requireCode = true;          // press E to type the 6-digit code the boss carries, instead of holding E
 
     [Header("Blinking emission")]
     public Color emissionColor = new Color(1f, 0.1f, 0.05f);  // used if the material has no emission colour
@@ -40,6 +44,7 @@ public class Bomb : MonoBehaviour, IInteractable
     float noiseTimer;
     AudioSource audioSource;
     AudioSource loopSource;
+    BombKeypad keypad;
 
     void Awake()
     {
@@ -67,9 +72,18 @@ public class Bomb : MonoBehaviour, IInteractable
         audioSource.playOnAwake = false;
         audioSource.spatialBlend = 1f;
         audioSource.minDistance = 2f;
-        audioSource.maxDistance = 20f;
+        audioSource.maxDistance = 30f;
 
-        if (randomSpawn) MoveToRandomSpawn();
+        // Default sounds (Assets/Resources/Sounds), unless set in the Inspector
+        if (beepSound == null) beepSound = Resources.Load<AudioClip>("Sounds/bomb_beep");
+        if (defusedSound == null) defusedSound = Resources.Load<AudioClip>("Sounds/bomb_defused");
+
+        if (requireCode)
+        {
+            keypad = GetComponent<BombKeypad>();
+            if (keypad == null) keypad = gameObject.AddComponent<BombKeypad>();
+        }
+        else if (randomSpawn) MoveToRandomSpawn();
     }
 
     void OnDestroy()
@@ -131,8 +145,8 @@ public class Bomb : MonoBehaviour, IInteractable
         return !Defused && (m == null || !m.IsOver);
     }
 
-    public string Prompt => "defuse the bomb";
-    public float HoldTime => defuseTime;
+    public string Prompt => requireCode ? "enter the disarm code" : "defuse the bomb";
+    public float HoldTime => requireCode ? 0f : defuseTime;
 
     public void HoldTick(Interactor who, float progress)
     {
@@ -160,6 +174,18 @@ public class Bomb : MonoBehaviour, IInteractable
     }
 
     public void Interact(Interactor who)
+    {
+        if (Defused) return;
+        if (requireCode && keypad != null)
+        {
+            keypad.Open(who.transform);
+            return;
+        }
+        Defuse();
+    }
+
+    // Disarms the bomb (right code entered, or the hold finished)
+    public void Defuse()
     {
         if (Defused) return;
         Defused = true;

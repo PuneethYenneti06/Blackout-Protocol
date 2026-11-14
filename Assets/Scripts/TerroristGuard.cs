@@ -107,7 +107,11 @@ public class TerroristGuard : MonoBehaviour, IDamageable
     public float runSpeed = 4f;
     public float moveTurnSpeed = 360f;               // body turn speed while walking/running
     public float bombGuardDistance = 2.5f;           // Bomb role: post this far from the bomb
-    public float hostageHoldRadius = 2f;             // Hostage role: spread around the hostage room centre
+    public float hostageHoldRadius = 2f;
+    [HideInInspector] public int hostageGroup = -1;  // set by HostageRooms: which hostage room he guards
+    [HideInInspector] public bool hidingForScare;    // set by JumpScare: blind until he jumps out at you             // Hostage role: spread around the hostage room centre
+    public float wanderRadius = 4f;                  // Static guards stroll around their spawn point within this, metres (0 = stand still)
+    public Vector2 wanderPause = new Vector2(3f, 7f); // seconds he stands and looks around between strolls (min, max)
     public float huntWanderRadius = 8f;              // after reaching the last known position, search around it
     public bool shootFreedHostages = true;           // in lockdown, shoot hostages that follow the player
 
@@ -134,6 +138,15 @@ public class TerroristGuard : MonoBehaviour, IDamageable
     Quaternion modelRootBase;
 
     public bool IsDead => state == State.Dead;
+    public int Health => health;
+
+    // Sends him to a spot (the boss heading for the main area). He searches around it when he gets there.
+    public void HuntAt(Vector3 point)
+    {
+        SetHunt(point);
+        MissionManager m = MissionManager.Instance;
+        if (m != null && m.HasLastKnownPlayerPosition) lastMissionReport = m.LastKnownPlayerPosition;
+    }
 
     // Bones
     bool hasArms;
@@ -249,11 +262,17 @@ public class TerroristGuard : MonoBehaviour, IDamageable
             }
         }
 
+        // Default gunshot (Assets/Resources/Sounds), unless one is set in the Inspector
+        if (fireSound == null) fireSound = Resources.Load<AudioClip>("Sounds/gunshot_guard");
+
         if (fireSound != null)
         {
             audioSource = gameObject.AddComponent<AudioSource>();
             audioSource.playOnAwake = false;
             audioSource.spatialBlend = 1f; // sound comes from where he is
+            audioSource.rolloffMode = AudioRolloffMode.Linear;
+            audioSource.minDistance = 4f;  // full volume this close
+            audioSource.maxDistance = 70f; // still faintly audible across the floor
         }
 
         npcAnimator = GetComponent<NpcAnimator>();
@@ -724,8 +743,24 @@ public class TerroristGuard : MonoBehaviour, IDamageable
         return Quaternion.Euler(0f, currentYaw + headYaw, 0f) * Vector3.forward;
     }
 
+    // JumpScare: he spins to face the player and goes straight to alert.
+    // extraDelay adds to his reaction time, so the player has a moment to react.
+    public void Startle(Vector3 playerPosition, float extraDelay)
+    {
+        if (state == State.Dead) return;
+        hidingForScare = false;
+        if (player == null) player = GameObject.FindWithTag("Player");
+        currentYaw = YawToward(playerPosition);
+        transform.rotation = Quaternion.Euler(0f, currentYaw, 0f);
+        lastKnownPosition = player != null ? PlayerAim() : playerPosition;
+        state = State.Alerted;
+        alertTimer = -extraDelay;
+        PlayerSpotted?.Invoke(this);
+    }
+
     bool CanSeePlayer(bool keepTracking)
     {
+        if (hidingForScare) return false;
         if (player == null || !player.activeInHierarchy)
             player = GameObject.FindWithTag("Player");
         if (player == null) return false;
@@ -804,7 +839,10 @@ public class TerroristGuard : MonoBehaviour, IDamageable
 
         recoilKick = 1f;
         if (audioSource != null && fireSound != null)
+        {
+            audioSource.pitch = Random.Range(0.94f, 1.06f);
             audioSource.PlayOneShot(fireSound);
+        }
     }
 
     // The shot comes from the rifle if he has one, otherwise from his eyes
@@ -972,6 +1010,14 @@ public class TerroristGuard : MonoBehaviour, IDamageable
             return;
         }
 
+        // Waiting to jump out at the player: stay in the hiding spot
+        if (hidingForScare)
+        {
+            if (!Near(postPosition)) Go(postPosition, false);
+            else StopMoving();
+            return;
+        }
+
         if (lockdown)
         {
             if (role == GuardRole.Hostage)
@@ -1045,6 +1091,13 @@ public class TerroristGuard : MonoBehaviour, IDamageable
             return;
         }
 
+        // Static guards stroll to random spots near where they spawned, pausing to look around
+        if (role == GuardRole.Static && wanderRadius > 0.5f)
+        {
+            UpdateWander(dt);
+            return;
+        }
+
         if (!Near(postPosition))
         {
             Go(postPosition, false);
@@ -1061,14 +1114,88 @@ public class TerroristGuard : MonoBehaviour, IDamageable
         }
     }
 
+    // ---- Wandering around the spawn point ----
+    Vector3 wanderPoint;
+    bool hasWanderPoint;
+    float wanderPauseLeft = -1f;
+    float wanderWalkTime;
+
+    void UpdateWander(float dt)
+    {
+        // Standing still: scanning works as normal while he waits
+        if (!hasWanderPoint)
+        {
+            StopMoving();
+            if (wanderPauseLeft < 0f) wanderPauseLeft = Random.Range(wanderPause.x, wanderPause.y);
+            wanderPauseLeft -= dt;
+            if (wanderPauseLeft > 0f) return;
+
+            wanderPauseLeft = -1f;
+            hasWanderPoint = PickWanderPoint(out wanderPoint);
+            wanderWalkTime = 0f;
+            return;
+        }
+
+        wanderWalkTime += dt;
+        if (Near(wanderPoint) || wanderWalkTime > 12f) // arrived, or stuck: stop and look around
+        {
+            hasWanderPoint = false;
+            StopMoving();
+            // Face roughly the way he was placed, give or take, so he keeps watching his area
+            scanCenterYaw = postYaw + Random.Range(-60f, 60f);
+            return;
+        }
+        Go(wanderPoint, false);
+    }
+
+    // A random spot near his spawn point that he can walk to in a straight line.
+    // NavMesh.Raycast stops at the first wall or edge, so the spot is always reachable
+    // and never in another room.
+    bool PickWanderPoint(out Vector3 point)
+    {
+        point = postPosition;
+        Vector3 from = agent.nextPosition;
+        for (int i = 0; i < 10; i++)
+        {
+            Vector2 r = Random.insideUnitCircle.normalized * Random.Range(1.5f, wanderRadius);
+            // Head back toward the spawn point when he has drifted away from it
+            Vector3 center = FlatDistance(from, postPosition) > wanderRadius * 0.5f ? postPosition : from;
+            Vector3 candidate = center + new Vector3(r.x, 0f, r.y);
+            candidate.y = from.y;
+
+            Vector3 target = candidate;
+            if (NavMesh.Raycast(from, candidate, out NavMeshHit edge, NavMesh.AllAreas))
+                target = edge.position - (candidate - from).normalized * 0.4f; // stop short of the wall
+
+            if (FlatDistance(target, from) < 1f) continue; // too close to bother
+            if (FlatDistance(target, postPosition) > wanderRadius + 0.5f) continue;
+
+            point = target;
+            return true;
+        }
+        if (!loggedWanderFail)
+        {
+            loggedWanderFail = true;
+            Debug.LogWarning($"[TerroristGuard] {name}: no room to wander around his spawn point.");
+        }
+        return false;
+    }
+    bool loggedWanderFail;
+
     bool PickHoldPoint()
     {
-        if (!Hostage.TryGetRoomCenter(out Vector3 center))
+        // The jumpscare guard keeps to his hiding place by the door, even during the lockdown
+        if (hidingForScare)
         {
             holdPoint = postPosition;
             return true;
         }
-        int index = RoleIndex(GuardRole.Hostage);
+        if (!Hostage.TryGetRoomCenter(hostageGroup, out Vector3 center))
+        {
+            holdPoint = postPosition;
+            return true;
+        }
+        int index = hostageGroup >= 0 ? 0 : RoleIndex(GuardRole.Hostage); // one guard per room
         Vector3 p = center + Quaternion.Euler(0f, index * 180f, 0f) * Vector3.forward * hostageHoldRadius;
         if (NavMesh.SamplePosition(p, out NavMeshHit hit, 3f, NavMesh.AllAreas)) p = hit.position;
         holdPoint = p;

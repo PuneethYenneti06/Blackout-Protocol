@@ -1538,6 +1538,10 @@ MonoBehaviour:
   moveTurnSpeed: 360
   bombGuardDistance: 2.5
   hostageHoldRadius: 2
+  hostageGroup: -1
+  hidingForScare: 0
+  wanderRadius: 4
+  wanderPause: {x: 3, y: 7}
   huntWanderRadius: 8
   shootFreedHostages: 1
   canRadio: 1
@@ -1924,6 +1928,10 @@ MonoBehaviour:
   moveTurnSpeed: 360
   bombGuardDistance: 2.5
   hostageHoldRadius: 2
+  hostageGroup: -1
+  hidingForScare: 0
+  wanderRadius: 4
+  wanderPause: {x: 3, y: 7}
   huntWanderRadius: 8
   shootFreedHostages: 1
   canRadio: 1
@@ -3651,6 +3659,10 @@ MonoBehaviour:
   moveTurnSpeed: 360
   bombGuardDistance: 2.5
   hostageHoldRadius: 2
+  hostageGroup: -1
+  hidingForScare: 0
+  wanderRadius: 4
+  wanderPause: {x: 3, y: 7}
   huntWanderRadius: 8
   shootFreedHostages: 1
   canRadio: 1
@@ -3779,75 +3791,6 @@ Transform:
   - {fileID: 1012643567}
   m_Father: {fileID: 1827005214}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1001 &437341389
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: -8679921383154817045, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
-      propertyPath: m_LocalScale.x
-      value: 2
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
-      propertyPath: m_LocalScale.y
-      value: 2
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
-      propertyPath: m_LocalScale.z
-      value: 2
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: -228.32
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0.08
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 79.72
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 0.7071067
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: -0.7071069
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 919132149155446097, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
-      propertyPath: m_Name
-      value: TimeBomb
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: b53877158b8954543aca6a8af06f4e75, type: 3}
 --- !u!1 &437865887
 GameObject:
   m_ObjectHideFlags: 0
@@ -6385,6 +6328,10 @@ MonoBehaviour:
   moveTurnSpeed: 360
   bombGuardDistance: 2.5
   hostageHoldRadius: 2
+  hostageGroup: -1
+  hidingForScare: 0
+  wanderRadius: 4
+  wanderPause: {x: 3, y: 7}
   huntWanderRadius: 8
   shootFreedHostages: 1
   canRadio: 1
@@ -8058,6 +8005,10 @@ MonoBehaviour:
   moveTurnSpeed: 360
   bombGuardDistance: 2.5
   hostageHoldRadius: 2
+  hostageGroup: -1
+  hidingForScare: 0
+  wanderRadius: 4
+  wanderPause: {x: 3, y: 7}
   huntWanderRadius: 8
   shootFreedHostages: 1
   canRadio: 1
@@ -8554,6 +8505,8 @@ MonoBehaviour:
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295
+  acceleration: 22
+  deceleration: 28
   speedMultiplier: 1
   knockBackSpeed: 3
   knockBackTime: 0.15
@@ -8728,6 +8681,10 @@ MonoBehaviour:
   moveTurnSpeed: 360
   bombGuardDistance: 2.5
   hostageHoldRadius: 2
+  hostageGroup: -1
+  hidingForScare: 0
+  wanderRadius: 4
+  wanderPause: {x: 3, y: 7}
   huntWanderRadius: 8
   shootFreedHostages: 1
   canRadio: 1
@@ -10867,6 +10824,10 @@ MonoBehaviour:
   moveTurnSpeed: 360
   bombGuardDistance: 2.5
   hostageHoldRadius: 2
+  hostageGroup: -1
+  hidingForScare: 0
+  wanderRadius: 4
+  wanderPause: {x: 3, y: 7}
   huntWanderRadius: 8
   shootFreedHostages: 1
   canRadio: 1
@@ -12090,6 +12051,10 @@ MonoBehaviour:
   moveTurnSpeed: 360
   bombGuardDistance: 2.5
   hostageHoldRadius: 2
+  hostageGroup: -1
+  hidingForScare: 0
+  wanderRadius: 4
+  wanderPause: {x: 3, y: 7}
   huntWanderRadius: 8
   shootFreedHostages: 1
   canRadio: 1
@@ -13085,6 +13050,10 @@ MonoBehaviour:
   moveTurnSpeed: 360
   bombGuardDistance: 2.5
   hostageHoldRadius: 2
+  hostageGroup: -1
+  hidingForScare: 0
+  wanderRadius: 4
+  wanderPause: {x: 3, y: 7}
   huntWanderRadius: 8
   shootFreedHostages: 1
   canRadio: 1
@@ -14412,10 +14381,18 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ThirdPersonCamera
   target: {fileID: 1038190960}
+  firstPerson: 1
+  toggleViewKey: 118
+  sensitivity: 3
+  eyeHeight: 1.6
+  eyeForward: 0.12
+  fpMinPitch: -80
+  fpMaxPitch: 80
+  fpNearClip: 0.05
+  headBob: 0.022
   distance: 4
   height: 1.4
   shoulderOffset: 0.5
-  sensitivity: 3
   minPitch: -20
   maxPitch: 60
   smooth: 12
@@ -14424,6 +14401,8 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 4294967295
   recoilRecovery: 8
+  jumpscareShake: 4.5
+  jumpscareShakeTime: 0.7
 --- !u!1 &1729198592
 GameObject:
   m_ObjectHideFlags: 0
@@ -17336,6 +17315,10 @@ MonoBehaviour:
   moveTurnSpeed: 360
   bombGuardDistance: 2.5
   hostageHoldRadius: 2
+  hostageGroup: -1
+  hidingForScare: 0
+  wanderRadius: 4
+  wanderPause: {x: 3, y: 7}
   huntWanderRadius: 8
   shootFreedHostages: 1
   canRadio: 1
@@ -17638,7 +17621,6 @@ SceneRoots:
   - {fileID: 270780516}
   - {fileID: 414971677}
   - {fileID: 1438046805}
-  - {fileID: 437341389}
   - {fileID: 922653987}
   - {fileID: 757118439}
   - {fileID: 1052848342}

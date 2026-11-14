@@ -65,6 +65,8 @@ public class PlayerShooting : MonoBehaviour
     void Awake()
     {
         if (cam == null) cam = Camera.main;
+        // Default gunshot (Assets/Resources/Sounds), unless one is set in the Inspector
+        if (fireSound == null) fireSound = Resources.Load<AudioClip>("Sounds/gunshot_player");
         anim = GetComponentInChildren<Animator>();
         Magazine = magazineSize;
         Spare = startSpare;
@@ -239,6 +241,14 @@ public class PlayerShooting : MonoBehaviour
     {
         if (muzzle != null) return muzzle.position;
         float s = transform.lossyScale.y;
+        // First person: his body is hidden, so shots start just below and right of your view
+        if (ThirdPersonCamera.FirstPersonActive && FirstPersonViewModel.MuzzleWorld.HasValue)
+            return FirstPersonViewModel.MuzzleWorld.Value; // tip of the rifle you see in your hands
+        if (ThirdPersonCamera.FirstPersonActive && cam != null)
+        {
+            Transform c = cam.transform;
+            return c.position + c.forward * 0.5f * s + c.right * 0.15f * s - c.up * 0.15f * s;
+        }
         if (rightHand != null) return rightHand.position + transform.forward * 0.45f * s + Vector3.up * 0.05f * s;
         return transform.position + Vector3.up * 1.3f * s + transform.forward * 0.6f * s + transform.right * 0.2f * s;
     }
@@ -273,6 +283,8 @@ public class PlayerShooting : MonoBehaviour
             audioSource.playOnAwake = false;
             audioSource.spatialBlend = 0f;
         }
+        // Slight pitch change on gunshots, so automatic fire doesn't sound like one clip on repeat
+        audioSource.pitch = clip == fireSound ? Random.Range(0.95f, 1.05f) : 1f;
         audioSource.PlayOneShot(clip, volume);
     }
 }
