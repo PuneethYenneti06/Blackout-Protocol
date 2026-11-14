@@ -5,8 +5,9 @@ using UnityEngine;
 public class PlayerMedkits : MonoBehaviour
 {
     public int maxCarried = 2;
-    public int startCount = 0;
-    public int healHits = 2;
+    public int startCount = 2;
+    public int healHits = 2;          // used only when fullHeal is off
+    public bool fullHeal = true;      // a medkit restores all health
     public float healTime = 3f;
     [Range(0.1f, 1f)] public float slowMultiplier = 0.4f;   // movement speed while healing
     public KeyCode useKey = KeyCode.H;
@@ -63,11 +64,11 @@ public class PlayerMedkits : MonoBehaviour
             healTimer -= Time.deltaTime;
             if (healTimer <= 0f)
             {
-                health.Heal(healHits);
+                int healed = health.Heal(fullHeal ? health.maxHealth : healHits);
                 Count--;
                 StopHealing();
                 PlaySound(healDoneSound);
-                if (m != null) m.ShowToast($"+{healHits} health");
+                if (m != null) m.ShowToast(fullHeal ? "Fully healed" : $"+{healed} health");
             }
             return;
         }

@@ -100,6 +100,7 @@ public class Interactor : MonoBehaviour
         }
 
         if (Target == null) return;
+        if (BombKeypad.IsOpen) return; // the code panel is up: no prompt behind it, E does nothing
 
         if (MissionHUD.Instance != null) MissionHUD.Instance.SetPrompt(PromptText(true));
 
@@ -178,7 +179,7 @@ public class Interactor : MonoBehaviour
 
     void OnGUI()
     {
-        if (MissionHUD.Instance != null || Target == null || holding != null) return;
+        if (MissionHUD.Instance != null || Target == null || holding != null || BombKeypad.IsOpen) return;
         if (promptStyle == null)
         {
             Font font = Font.CreateDynamicFontFromOSFont(new[] { promptFont, "Arial" }, promptSize);

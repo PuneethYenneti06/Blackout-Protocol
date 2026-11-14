@@ -15,6 +15,12 @@ public class PlayerMovement : MonoBehaviour
     public float jumpHeight = 1.2f;
     public LayerMask groundMask = ~0;
 
+    // How quickly he gets up to speed and comes to a stop (m/s per second).
+    // Lower = smoother but floatier; higher = snappier.
+    public float acceleration = 22f;
+    public float deceleration = 28f;
+    Vector3 currentHorizontal;
+
     // Scales walk/run speed. Medkit healing sets it below 1 (slowed); 1 = normal.
     [HideInInspector] public float speedMultiplier = 1f;
 
@@ -124,12 +130,14 @@ public class PlayerMovement : MonoBehaviour
     float knockBackLeft;
     readonly Collider[] overlapHits = new Collider[8];
 
-    bool BodyInsideWall()
+    bool BodyInsideWall() => BodyInsideWallAt(rb.position);
+
+    bool BodyInsideWallAt(Vector3 position)
     {
         Vector3 scale = transform.lossyScale;
         float radius = capsule.radius * Mathf.Max(scale.x, scale.z) * 0.9f;
         float height = capsule.height * scale.y;
-        Vector3 center = rb.position + rb.rotation * Vector3.Scale(capsule.center, scale);
+        Vector3 center = position + rb.rotation * Vector3.Scale(capsule.center, scale);
         // Bottom raised so the floor and small ledges don't count as walls
         Vector3 bottom = center + Vector3.up * (-height * 0.5f + 0.25f + radius);
         Vector3 top = center + Vector3.up * (height * 0.5f - radius);
@@ -151,15 +159,57 @@ public class PlayerMovement : MonoBehaviour
         return false;
     }
 
+    float stuckInside;
+
+    // Rings of spots around him (and the nearest walkable floor), closest first
+    bool FindFreeSpot(out Vector3 spot)
+    {
+        Vector3 here = rb.position;
+        for (int ring = 1; ring <= 8; ring++)
+        {
+            float r = ring * 0.25f;
+            for (int k = 0; k < 12; k++)
+            {
+                Vector3 p = here + Quaternion.Euler(0f, k * 30f, 0f) * Vector3.forward * r;
+                if (!BodyInsideWallAt(p)) { spot = p; return true; }
+            }
+        }
+        if (UnityEngine.AI.NavMesh.SamplePosition(here, out UnityEngine.AI.NavMeshHit hit, 3f, UnityEngine.AI.NavMesh.AllAreas)
+            && !BodyInsideWallAt(hit.position))
+        {
+            spot = hit.position;
+            return true;
+        }
+        spot = here;
+        return false;
+    }
+
     void KeepOutOfWalls()
     {
         if (!BodyInsideWall())
         {
             lastSafePosition = rb.position;
             hasSafePosition = true;
+            stuckInside = 0f;
             return;
         }
-        if (!hasSafePosition) return;
+        stuckInside += Time.fixedDeltaTime;
+
+        // Stepping back hasn't worked (the "safe" spot is inside too, e.g. a door swung into him):
+        // jump to the nearest spot around him where his body is clear
+        if (!hasSafePosition || stuckInside > 0.25f)
+        {
+            if (FindFreeSpot(out Vector3 free))
+            {
+                rb.position = free;
+                rb.linearVelocity = Vector3.zero;
+                currentHorizontal = Vector3.zero;
+                lastSafePosition = free;
+                hasSafePosition = true;
+            }
+            stuckInside = 0f;
+            return;
+        }
 
         Vector3 back = lastSafePosition - rb.position;
         back.y = 0f;
@@ -175,7 +225,12 @@ public class PlayerMovement : MonoBehaviour
         grounded = CheckGrounded();
         bool moving = moveDir != Vector3.zero;
 
-        if (aiming && aimDir.sqrMagnitude > 0.001f)
+        if (ThirdPersonCamera.FirstPersonActive && aimDir.sqrMagnitude > 0.001f)
+        {
+            // first person: his body always faces where you look, so W is always forward
+            rb.MoveRotation(Quaternion.LookRotation(aimDir));
+        }
+        else if (aiming && aimDir.sqrMagnitude > 0.001f)
         {
             // aiming: face where the camera looks
             rb.MoveRotation(Quaternion.Slerp(rb.rotation, Quaternion.LookRotation(aimDir), turnSpeed * Time.fixedDeltaTime));
@@ -191,7 +246,11 @@ public class PlayerMovement : MonoBehaviour
         if (jumpQueued && grounded) vy = Mathf.Sqrt(jumpHeight * -2f * gravity);
         jumpQueued = false;
 
-        Vector3 horizontal = moveDir * moveSpeed;
+        // Ease toward the wanted speed instead of jumping to it
+        Vector3 wanted = moveDir * moveSpeed;
+        float rate = wanted.sqrMagnitude >= currentHorizontal.sqrMagnitude ? acceleration : deceleration;
+        currentHorizontal = Vector3.MoveTowards(currentHorizontal, wanted, rate * Time.fixedDeltaTime);
+        Vector3 horizontal = currentHorizontal;
         // Don't push into walls he is touching: drop the part of the movement that goes
         // into each wall, so he slides along it and physics can push him back out.
         foreach (Vector3 n in wallNormals)
@@ -200,6 +259,7 @@ public class PlayerMovement : MonoBehaviour
             if (into < 0f) horizontal -= n * into;
         }
         wallNormals.Clear();
+        currentHorizontal = horizontal; // sliding along a wall keeps only the sideways part
 
         if (knockBackLeft > 0f)
         {

@@ -224,6 +224,13 @@ public class MissionManager : MonoBehaviour
             CheckWin();
     }
 
+    // Takes time off the bomb timer (e.g. a wrong disarm code)
+    public void AddTimePenalty(float seconds)
+    {
+        if (IsOver || !TimerRunning) return;
+        TimeLeft = Mathf.Max(0f, TimeLeft - seconds);
+    }
+
     // Radio alarm from a guard, or any other reason. One-way: once on, lockdown stays.
     public void RaiseAlarm(string reason)
     {
