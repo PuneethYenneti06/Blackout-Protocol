@@ -18,6 +18,7 @@ public class BombKeypad : MonoBehaviour
     string entered = "";
     float errorFlash;
     PlayerShooting shooting;
+    bool shootingWasEnabled;   // so closing only gives the gun back if it had it before
     AudioClip errorSound;
     AudioClip pressSound;
     AudioSource audioSource;
@@ -60,15 +61,28 @@ public class BombKeypad : MonoBehaviour
         entered = "";
         IsOpen = true;
         shooting = who != null ? who.GetComponent<PlayerShooting>() : null;
-        if (shooting != null) shooting.enabled = false; // left click doesn't fire while typing
+        if (shooting != null)
+        {
+            shootingWasEnabled = shooting.enabled;
+            shooting.enabled = false; // left click doesn't fire while typing
+        }
     }
 
     public void Close()
     {
         if (!IsOpen) return;
         IsOpen = false;
-        if (shooting != null) shooting.enabled = true;
+        // Give the gun back only if it was on before, and the player is still alive. A player who
+        // was killed while typing had the gun switched off by PlayerHealth, and must stay that way.
+        if (shooting != null && shootingWasEnabled && !IsDeadPlayer(shooting))
+            shooting.enabled = true;
         shooting = null;
+        shootingWasEnabled = false;
+    }
+
+    static bool IsDeadPlayer(PlayerShooting gun)
+    {
+        return gun.TryGetComponent(out PlayerHealth hp) && hp.IsDead;
     }
 
     void OnDisable()

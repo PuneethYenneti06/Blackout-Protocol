@@ -17,6 +17,7 @@ public class Pickup : MonoBehaviour
 
     Transform visual;
     float fullToastCooldown;
+    bool collected;   // set once taken, so a second overlapping collider can't take it again
 
     void Awake()
     {
@@ -41,6 +42,7 @@ public class Pickup : MonoBehaviour
 
     void OnTriggerStay(Collider other)
     {
+        if (collected) return;
         GameObject player = PlayerFrom(other);
         if (player == null) return;
         if (player.TryGetComponent(out PlayerHealth hp) && hp.IsDead) return;
@@ -74,6 +76,7 @@ public class Pickup : MonoBehaviour
 
     void Collected(string message)
     {
+        collected = true;   // Destroy happens at the end of the frame, so guard against a repeat call
         if (MissionManager.Instance != null) MissionManager.Instance.ShowToast(message);
         else if (MissionHUD.Instance != null) MissionHUD.Instance.AddToast(message);
         if (pickupSound != null) AudioSource.PlayClipAtPoint(pickupSound, transform.position);

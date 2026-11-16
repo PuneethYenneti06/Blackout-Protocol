@@ -42,6 +42,9 @@ public sealed class BlackoutDirector : MonoBehaviour
     private float normalSaturation;
     private Color normalColorFilter = Color.white;
     private Color normalAmbientColor;
+    private Color normalSkyAmbient;
+    private Color normalEquatorAmbient;
+    private Color normalGroundAmbient;
     private bool isBlackout;
     private bool flashlightEnabled = true;
     private float transition;
@@ -88,7 +91,7 @@ public sealed class BlackoutDirector : MonoBehaviour
         instance = this;
         DontDestroyOnLoad(gameObject);
         SceneManager.sceneLoaded += OnSceneLoaded;
-        EnsureSceneReferences();
+        EnsureSceneReferences(true);
     }
 
     private void Update()
@@ -133,10 +136,10 @@ public sealed class BlackoutDirector : MonoBehaviour
         originalLightStates.Clear();
         originalLightIntensities.Clear();
         sceneStateCaptured = false;
-        EnsureSceneReferences();
+        EnsureSceneReferences(true);
     }
 
-    private void EnsureSceneReferences()
+    private void EnsureSceneReferences(bool resetTransition)
     {
         managedLights.Clear();
         foreach (Light sceneLight in FindObjectsByType<Light>(FindObjectsSortMode.None))
@@ -157,8 +160,13 @@ public sealed class BlackoutDirector : MonoBehaviour
         CreateFlashlight();
         FindOrCreateColorAdjustments();
         CreateBlackoutAudio();
-        transition = isBlackout ? 1f : 0f;
-        transitionTarget = transition;
+        // Only a freshly loaded scene snaps the fade to the current power state. A press of the
+        // power switch during a fade keeps the fade where it is instead of jumping first.
+        if (resetTransition)
+        {
+            transition = isBlackout ? 1f : 0f;
+            transitionTarget = transition;
+        }
         ApplyTransition(transition);
         SyncGuardAlert();
     }
@@ -274,13 +282,16 @@ public sealed class BlackoutDirector : MonoBehaviour
             normalSaturation = colorAdjustments.saturation.value;
             normalColorFilter = colorAdjustments.colorFilter.value;
             normalAmbientColor = RenderSettings.ambientLight;
+            normalSkyAmbient = RenderSettings.ambientSkyColor;
+            normalEquatorAmbient = RenderSettings.ambientEquatorColor;
+            normalGroundAmbient = RenderSettings.ambientGroundColor;
             sceneStateCaptured = true;
         }
     }
 
     private void SetBlackout(bool enabled)
     {
-        EnsureSceneReferences();
+        EnsureSceneReferences(false);
         isBlackout = enabled;
         transitionTarget = enabled ? 1f : 0f;
         if (blackoutAudio != null)
@@ -351,6 +362,16 @@ public sealed class BlackoutDirector : MonoBehaviour
         }
 
         RenderSettings.ambientLight = Color.Lerp(normalAmbientColor, blackoutAmbientColor, amount);
+
+        // MapLighting switches the scene to Trilight (or Gradient) ambient, which takes its colours
+        // from the sky / equator / ground values and ignores ambientLight. Dim those as well,
+        // otherwise the room keeps its ambient light during a power cut.
+        if (RenderSettings.ambientMode != AmbientMode.Flat)
+        {
+            RenderSettings.ambientSkyColor = Color.Lerp(normalSkyAmbient, blackoutAmbientColor, amount);
+            RenderSettings.ambientEquatorColor = Color.Lerp(normalEquatorAmbient, blackoutAmbientColor, amount);
+            RenderSettings.ambientGroundColor = Color.Lerp(normalGroundAmbient, blackoutAmbientColor, amount);
+        }
     }
 
     private void UpdateFlashlight()
@@ -386,6 +407,7 @@ public sealed class BlackoutDirector : MonoBehaviour
         sceneStateCaptured = false;
         originalLightStates.Clear();
         originalLightIntensities.Clear();
-        EnsureSceneReferences();
+        EnsureSceneReferences(true);
     }
 }
+
