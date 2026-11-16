@@ -32,7 +32,14 @@ public static class MapRoof
         Build();
     }
 
-    static void OnSceneLoaded(Scene s, LoadSceneMode m) => Build();
+    static void OnSceneLoaded(Scene s, LoadSceneMode m)
+    {
+        lastFrame = -1;
+        Roof = null;
+        CeilingMaterial = null;
+        OuterWalls.Clear();
+        Build();
+    }
 
     public static void Build()
     {
