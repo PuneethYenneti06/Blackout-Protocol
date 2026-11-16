@@ -82,7 +82,11 @@ public static class MapTextures
         Apply();
     }
 
-    static void OnSceneLoaded(Scene s, LoadSceneMode m) => Apply();
+    static void OnSceneLoaded(Scene s, LoadSceneMode m)
+    {
+        lastFrame = -1;
+        Apply();
+    }
 
     public static string BaseName(Material m)
     {
