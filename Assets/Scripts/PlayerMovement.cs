@@ -8,6 +8,10 @@ using UnityEngine;
 [RequireComponent(typeof(CharacterController))]
 public class PlayerMovement : MonoBehaviour
 {
+    // Set by BombKeypad while the code panel is open: walking, jumping and aiming input are ignored.
+    // Gravity, friction and wall handling keep running, so the player can't float or slide.
+    public static bool InputLocked;
+
     public float walkSpeed = 3.5f;
     public float runSpeed = 5f;
     public float turnSpeed = 12f;
@@ -72,7 +76,7 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
-        Vector3 input = new Vector3(
+        Vector3 input = InputLocked ? Vector3.zero : new Vector3(
             Input.GetAxisRaw("Horizontal"), 0f, Input.GetAxisRaw("Vertical")).normalized;
 
         // Move relative to the camera if there is one, otherwise relative to the world
@@ -92,8 +96,8 @@ public class PlayerMovement : MonoBehaviour
         moveDir = moving ? dir.normalized : Vector3.zero;
         moveSpeed = (running ? runSpeed : walkSpeed) * speedMultiplier;
         aimDir = camF;
-        aiming = Input.GetMouseButton(0);
-        if (grounded && Input.GetKeyDown(KeyCode.Space)) jumpQueued = true;
+        aiming = !InputLocked && Input.GetMouseButton(0);
+        if (!InputLocked && grounded && Input.GetKeyDown(KeyCode.Space)) jumpQueued = true;
 
         if (animator != null && animator.runtimeAnimatorController != null)
         {

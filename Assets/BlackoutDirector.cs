@@ -4,6 +4,20 @@ using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 
+// Power cut / blackout for Blackout Protocol.
+//
+// Changes from the original:
+//  - B now toggles the power in builds too (the README promised it, but it was editor-only).
+//    Set allowBlackoutKey to false in the Inspector if you don't want it in the release.
+//  - The colour grade is applied to a runtime copy of the Volume profile, so play mode no longer
+//    writes overrides into the project's profile asset (which persisted after you stopped playing).
+//  - Area (Rectangle) lights can be dimmed too: includeAreaLights (off by default, as before).
+//  - A global Volume in the scene is preferred. If there isn't one, this script creates its own.
+//  - The flashlight is attached again if the camera appears after the scene has loaded.
+//  - Pressing F with an empty battery no longer plays the click for nothing.
+//  - B and F are ignored while a menu is open (GameMenu.IsBlocking).
+//
+// Public API (used by PowerSwitch, MapLighting, MissionHUD) is unchanged.
 public sealed class BlackoutDirector : MonoBehaviour
 {
     private const float DefaultBatterySeconds = 120f;
@@ -11,8 +25,12 @@ public sealed class BlackoutDirector : MonoBehaviour
     private static BlackoutDirector instance;
 
     [Header("Controls")]
+    [SerializeField] private bool allowBlackoutKey = true;   // B toggles the power (also in builds)
     [SerializeField] private KeyCode blackoutKey = KeyCode.B;
     [SerializeField] private KeyCode flashlightKey = KeyCode.F;
+
+    [Header("Lights")]
+    [SerializeField] private bool includeAreaLights = false; // true = Rectangle (area) lights go dark too
 
     [Header("Flashlight")]
     [SerializeField] private float flashlightRange = 18f;
@@ -33,6 +51,7 @@ public sealed class BlackoutDirector : MonoBehaviour
     private readonly Dictionary<Light, float> originalLightIntensities = new Dictionary<Light, float>();
     private Light flashlight;
     private Volume volume;
+    private VolumeProfile ownedProfile;      // the runtime copy we grade, never the project asset
     private ColorAdjustments colorAdjustments;
     private AudioSource blackoutAudio;
     private AudioClip humClip;
@@ -96,22 +115,24 @@ public sealed class BlackoutDirector : MonoBehaviour
 
     private void Update()
     {
-#if UNITY_EDITOR
-        // Debug shortcut, editor only. In the game the UPS power switch cuts the power.
-        if (Input.GetKeyDown(blackoutKey))
+        bool menuOpen = GameMenu.IsBlocking;
+
+        if (allowBlackoutKey && !menuOpen && Input.GetKeyDown(blackoutKey))
         {
             SetBlackout(!isBlackout);
         }
-#endif
 
-        if (Input.GetKeyDown(flashlightKey))
+        if (!menuOpen && Input.GetKeyDown(flashlightKey) && isBlackout && batterySeconds > 0f)
         {
-            if (isBlackout)
-            {
-                flashlightEnabled = !flashlightEnabled;
-                UpdateFlashlight();
-                PlayToggleClick();
-            }
+            flashlightEnabled = !flashlightEnabled;
+            UpdateFlashlight();
+            PlayToggleClick();
+        }
+
+        // The camera can appear after the scene loaded; attach the flashlight once it does
+        if (flashlight == null && UnityEngine.Camera.main != null)
+        {
+            CreateFlashlight();
         }
 
         transition = Mathf.MoveTowards(transition, transitionTarget, Time.deltaTime / Mathf.Max(0.01f, transitionDuration));
@@ -144,7 +165,12 @@ public sealed class BlackoutDirector : MonoBehaviour
         managedLights.Clear();
         foreach (Light sceneLight in FindObjectsByType<Light>(FindObjectsSortMode.None))
         {
-            if (sceneLight == null || sceneLight == flashlight || sceneLight.type == LightType.Rectangle)
+            if (sceneLight == null || sceneLight == flashlight)
+            {
+                continue;
+            }
+
+            if (sceneLight.type == LightType.Rectangle && !includeAreaLights)
             {
                 continue;
             }
@@ -160,6 +186,7 @@ public sealed class BlackoutDirector : MonoBehaviour
         CreateFlashlight();
         FindOrCreateColorAdjustments();
         CreateBlackoutAudio();
+
         // Only a freshly loaded scene snaps the fade to the current power state. A press of the
         // power switch during a fade keeps the fade where it is instead of jumping first.
         if (resetTransition)
@@ -167,6 +194,7 @@ public sealed class BlackoutDirector : MonoBehaviour
             transition = isBlackout ? 1f : 0f;
             transitionTarget = transition;
         }
+
         ApplyTransition(transition);
         SyncGuardAlert();
     }
@@ -222,6 +250,7 @@ public sealed class BlackoutDirector : MonoBehaviour
         blackoutAudio.clip = humClip;
     }
 
+    // 2-second loop. 52 Hz and 104 Hz both fit a whole number of cycles in 2 s, so the loop is seamless.
     private AudioClip CreateHumClip()
     {
         const int seconds = 2;
@@ -255,19 +284,36 @@ public sealed class BlackoutDirector : MonoBehaviour
 
     private void FindOrCreateColorAdjustments()
     {
-        volume = FindFirstObjectByType<Volume>();
-        if (volume == null)
+        // Prefer a global Volume from the scene. A local Volume only grades inside its box.
+        Volume chosen = null;
+        foreach (Volume candidate in FindObjectsByType<Volume>(FindObjectsSortMode.None))
         {
-            GameObject volumeObject = new GameObject("Blackout Color Grade");
-            volume = volumeObject.AddComponent<Volume>();
-            volume.isGlobal = true;
-            volume.priority = 10f;
-            volume.profile = ScriptableObject.CreateInstance<VolumeProfile>();
+            if (candidate.isGlobal)
+            {
+                chosen = candidate;
+                break;
+            }
         }
 
-        if (volume.profile == null)
+        if (chosen == null)
         {
-            volume.profile = ScriptableObject.CreateInstance<VolumeProfile>();
+            GameObject volumeObject = new GameObject("Blackout Color Grade");
+            chosen = volumeObject.AddComponent<Volume>();
+            chosen.isGlobal = true;
+            chosen.priority = 10f;
+            chosen.profile = ScriptableObject.CreateInstance<VolumeProfile>();
+        }
+
+        volume = chosen;
+
+        // Work on a runtime copy. Writing overrides into the project's own profile asset
+        // would change that asset and it would stay changed after play mode ends.
+        if (volume.profile == null || volume.profile != ownedProfile)
+        {
+            ownedProfile = volume.profile != null
+                ? Instantiate(volume.profile)
+                : ScriptableObject.CreateInstance<VolumeProfile>();
+            volume.profile = ownedProfile;
         }
 
         if (!volume.profile.TryGet(out colorAdjustments))
@@ -306,6 +352,7 @@ public sealed class BlackoutDirector : MonoBehaviour
                 blackoutAudio.Stop();
             }
         }
+
         UpdateFlashlight();
         BlackoutChanged?.Invoke(enabled);
     }
@@ -407,7 +454,7 @@ public sealed class BlackoutDirector : MonoBehaviour
         sceneStateCaptured = false;
         originalLightStates.Clear();
         originalLightIntensities.Clear();
+        flashlight = null;
         EnsureSceneReferences(true);
     }
 }
-

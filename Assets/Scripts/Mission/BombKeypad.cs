@@ -4,11 +4,20 @@ using UnityEngine;
 // keyboard (number keys), Enter to confirm, Backspace to delete, Esc to close.
 // The code is random every run; the boss carries it and it's revealed when he dies.
 // A wrong code costs time off the bomb timer.
+//
+// Changes from the original:
+//  - Walking input is ignored while the panel is open (PlayerMovement.InputLocked). Before,
+//    walking while typing could take you 3 m away and close the panel mid-code. The flag is used
+//    instead of switching PlayerMovement off, because it applies gravity and friction itself and
+//    would stop doing so.
+//  - LastClosedFrame records the frame the panel closed, so ThirdPersonCamera doesn't also treat
+//    the same Esc press as "free the mouse".
 public class BombKeypad : MonoBehaviour
 {
     public static string Code { get; private set; } = "";
     public static bool CodeKnown { get; private set; }
     public static bool IsOpen { get; private set; }
+    public static int LastClosedFrame { get; private set; } = -1;
 
     public float wrongCodePenalty = 30f;   // seconds taken off the timer for a wrong code
     public float closeDistance = 3f;       // walking this far away closes the panel
@@ -31,6 +40,8 @@ public class BombKeypad : MonoBehaviour
         Code = "";
         CodeKnown = false;
         IsOpen = false;
+        LastClosedFrame = -1;
+        PlayerMovement.InputLocked = false;
     }
 
     void Awake()
@@ -60,29 +71,33 @@ public class BombKeypad : MonoBehaviour
         user = who;
         entered = "";
         IsOpen = true;
+
         shooting = who != null ? who.GetComponent<PlayerShooting>() : null;
         if (shooting != null)
         {
             shootingWasEnabled = shooting.enabled;
             shooting.enabled = false; // left click doesn't fire while typing
         }
+
+        PlayerMovement.InputLocked = true; // no walking or jumping while typing
     }
 
     public void Close()
     {
         if (!IsOpen) return;
         IsOpen = false;
+        LastClosedFrame = Time.frameCount;
+
+        PlayerMovement.InputLocked = false;
+
         // Give the gun back only if it was on before, and the player is still alive. A player who
-        // was killed while typing had the gun switched off by PlayerHealth, and must stay that way.
-        if (shooting != null && shootingWasEnabled && !IsDeadPlayer(shooting))
+        // was killed while typing had it switched off by PlayerHealth, and must stay that way.
+        bool dead = user != null && user.TryGetComponent(out PlayerHealth hp) && hp.IsDead;
+
+        if (shooting != null && shootingWasEnabled && !dead)
             shooting.enabled = true;
         shooting = null;
         shootingWasEnabled = false;
-    }
-
-    static bool IsDeadPlayer(PlayerShooting gun)
-    {
-        return gun.TryGetComponent(out PlayerHealth hp) && hp.IsDead;
     }
 
     void OnDisable()
